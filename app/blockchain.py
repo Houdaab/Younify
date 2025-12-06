@@ -4,7 +4,7 @@ from typing import Optional, List, Literal
 
 from pydantic import BaseModel, Field, ValidationError
 
-from app.db import get_chain_by_id
+from app.db import get_chain_by_id, update_chain_document
 
 
 # ------------------------
@@ -80,10 +80,10 @@ def add_brain_state(chain_update: UpdateChainRequest, doc_id: str) -> dict:
     return node.to_dict()
 
 
-def verify_chain() -> bool:
+def verify_chain(chain_id: str) -> bool:
     """Verify full chain integrity from database"""
 
-    doc = get_chain_document()
+    doc = get_chain_by_id(chain_id)
     nodes = doc.get("nodes", [])
 
     try:
@@ -115,8 +115,8 @@ def verify_chain() -> bool:
 # ------------------------
 # Example Usage (FIXED)
 # ------------------------
-
-if __name__ == "__main__":
+#
+# if __name__ == "__main__":
     # brain_states = [
     #     "0,1,1,0,1,0,0,1",
     #     "0,1,1,1,1,0,1,0",
@@ -135,4 +135,4 @@ if __name__ == "__main__":
     #     node = add_brain_state(req)
     #     print(f"Added node: {node['hash']}")
 
-    print("Blockchain valid?", verify_chain())
+    # print("Blockchain valid?", verify_chain())

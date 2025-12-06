@@ -49,6 +49,10 @@ def create_new_chain(first_name: Optional[str] = None,
 def update_chain_is_human(chain_id: str, is_human: bool) -> None:
     """
     Update only the is_human field (and optional score) for a specific chain.
+
+    Returns
+    -------
+    None
     """
 
     update_data = {"is_human": is_human}

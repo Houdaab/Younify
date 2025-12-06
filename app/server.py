@@ -27,7 +27,8 @@ from starlette.responses import RedirectResponse
 from starlette.staticfiles import StaticFiles
 
 from app.blockchain import BrainStateNode, BrainStateNodeModel
-from app.db import update_chain_document, get_chain_by_id, add_node_to_chain, list_chain_summaries, create_new_chain
+from app.db import update_chain_document, get_chain_by_id, add_node_to_chain, list_chain_summaries, create_new_chain, \
+    update_chain_is_human
 from app.human_check import check_human
 from app.models.api import AddNodeRequest
 from app.models.internal import ExtraUserData
@@ -285,6 +286,9 @@ async def root():
 UPLOAD_DIR = Path(__file__).parent / "uploaded_videos"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
+EEG_DIR = Path(__file__).parent / "uploaded_brain_sessions"
+EEG_DIR.mkdir(parents=True, exist_ok=True)
+
 @app.post("/upload", tags=["Video Upload"])
 async def upload_video(
     background_tasks: BackgroundTasks,
@@ -412,6 +416,49 @@ def add_node(chain_id: str, request: AddNodeRequest):
 
     return {"message": "Node added successfully", "hash": added_node.hash}
 
+@app.post("/supply_data/{user_id}", tags=["EEG Upload"])
+async def upload_eeg(
+    user_id: str,  # <-- path parameter
+    file: UploadFile = File(...),
+):
+    """
+    Upload an EEG CSV file for a specific user, run human verification,
+    and create/update user's brain chain.
+    """
+    if not file.filename.lower().endswith(".csv"):
+        raise HTTPException(status_code=400, detail="EEG file must be a CSV")
+
+    eeg_id = str(uuid.uuid4())
+    eeg_path = EEG_DIR / f"{eeg_id}.csv"
+
+    try:
+        with open(eeg_path, "wb") as buffer:
+            while chunk := await file.read(1024 * 1024):
+                buffer.write(chunk)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"EEG upload failed: {str(e)}")
+
+    # Run human verification
+    human_result = check_human(eeg_path)
+    is_human = human_result.get("is_human", False)
+
+    # Create or update chain
+    chain_doc = get_chain_by_id(user_id)
+    if chain_doc:
+        update_chain_is_human(chain_doc["_id"], is_human)
+    else:
+        chain_doc = create_new_chain()
+        update_chain_is_human(chain_doc["_id"], is_human)
+
+    return {
+        "message": "EEG uploaded and verified",
+        "user_id": user_id,
+        "eeg_file": eeg_path.name,
+        "is_human": is_human,
+        "chain_id": chain_doc["_id"],
+        "hls_score": human_result.get("score"),
+        "verdict": human_result.get("verdict")
+    }
 
 if __name__ == "__main__":
     import uvicorn
