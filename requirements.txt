@@ -13,4 +13,5 @@ plotly>=5.18.0
 
 # EEG processing
 mne>=1.5.0
+openneuro-py>=2025.2.0
 

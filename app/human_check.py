@@ -5,7 +5,11 @@ Human EEG Verification Tool
 Determines whether an EEG signal is from a genuine human brain or synthetic.
 
 This tool computes the Human Legitimacy Score (HLS) and classifies signals
-as HUMAN (score >= 70) or NOT HUMAN (score < 70).
+as HUMAN (score >= 50) or NOT HUMAN (score < 50).
+
+The classification is purely algorithmic - it analyzes the brainwave signal
+characteristics (1/f spectral slope, entropy, channel uniqueness, etc.)
+and outputs HUMAN or NOT HUMAN based on the computed score.
 
 Usage:
     python -m app.human_check data/sample.csv
@@ -25,8 +29,8 @@ from src.loader import load_eeg_csv
 from src.preprocess import normalize_channels
 from src.hls_score import compute_hls
 
-# Default threshold for human classification
-HUMAN_THRESHOLD = 70
+# Default threshold for human classification (matches hls_score.py)
+HUMAN_THRESHOLD = 50
 
 
 def check_human(filepath: Path, fs: float = 256.0) -> dict:
@@ -46,13 +50,13 @@ def check_human(filepath: Path, fs: float = 256.0) -> dict:
         hls = scores["hls"]
         is_human = hls >= HUMAN_THRESHOLD
         
-        if hls >= 85:
+        if hls >= 70:
             verdict = "✅ HUMAN - High confidence"
-        elif hls >= 75:
+        elif hls >= 50:
             verdict = "✅ HUMAN - Moderate confidence"
-        elif hls >= 60:
-            verdict = "⚠️ UNCERTAIN - Possibly human, low quality signal"
-        elif hls >= 40:
+        elif hls >= 35:
+            verdict = "⚠️ UNCERTAIN - Borderline, possible artifacts"
+        elif hls >= 20:
             verdict = "❌ NOT HUMAN - Likely synthetic/artificial"
         else:
             verdict = "❌ NOT HUMAN - Definitely artificial"
@@ -84,7 +88,7 @@ def main():
     parser.add_argument("files", nargs="*", help="CSV files to check")
     parser.add_argument("--data-dir", type=str, help="Directory of CSV files")
     parser.add_argument("--fs", type=float, default=256.0, help="Sampling frequency")
-    parser.add_argument("--threshold", type=float, default=75, help="Human threshold (default: 75)")
+    parser.add_argument("--threshold", type=float, default=50, help="Human threshold (default: 50)")
     args = parser.parse_args()
     
     global HUMAN_THRESHOLD

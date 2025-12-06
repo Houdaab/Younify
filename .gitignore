@@ -31,48 +31,39 @@ env/
 .vscode/
 *.swp
 *.swo
-*~
 .DS_Store
-
-# Jupyter Notebooks
-.ipynb_checkpoints/
-*.ipynb_checkpoints
-
-# Raw EEG files (large binary formats)
-*.edf
-*.bdf
-*.set
-*.fif
-
-# Keep sample data
-!data/real/*.csv
-!data/synthetic/*.csv
 
 # Logs
 *.log
 logs/
 
+# Data files (large, downloaded separately)
+data/PRIMARY_hbn_human/
+data/ADDITIONAL_openneuro/
+*.edf
+*.bdf
+*.set
+*.fdt
+*.fif
+
+# Keep these data folders (small, included in repo)
+!data/ADDITIONAL_samples/
+!data/ADDITIONAL_samples/*.csv
+!data/PRIMARY_synthetic/
+!data/PRIMARY_synthetic/*.csv
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
 # Testing
+.pytest_cache/
 .coverage
 htmlcov/
-.tox/
-.pytest_cache/
 
-# Distribution
-*.manifest
-*.spec
+# Build artifacts
+*.egg-info/
+.eggs/
 
-# Installer logs
-pip-log.txt
-pip-delete-this-directory.txt
-
-# Environment variables
-.env
-.env.local
-*.env
-
-# Temporary files
-tmp/
-temp/
-*.tmp
-
+# Analysis results (regeneratable)
+data/hbn_analysis_results.json

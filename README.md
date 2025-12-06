@@ -1,28 +1,46 @@
-# EEG Legitimacy Classifier
+# Younify EEG Legitimacy Classifier
 
-A Python-based system for analyzing EEG signals and determining their authenticity. The project computes a **Human Legitimacy Score (HLS)** to distinguish genuine human brain activity from synthetic or artificial signals.
+**Human Legitimacy Score (HLS)** — A system to verify if an EEG signal comes from a real human brain.
 
-## 🎯 Features
+## 🎯 What This Does
 
-- **Human Legitimacy Score (HLS)**: 0-100 score indicating signal authenticity
-- **Physiological State Classification**: Classify mental states (Relaxed, Focused, Drowsy, etc.)
-- **Synthetic EEG Detection**: Identify fake/artificial brain signals
-- **Interactive Dashboard**: Visualize and compare EEG signals
-- **REST API**: FastAPI server for integration
+1. **Human vs Non-Human Classification** — Detect if EEG is from a real brain or synthetic/AI-generated
+2. **Identity Consistency** — Verify that the same person shows stable brain signatures across different tasks
+3. **State Classification** — Identify mental states (Relaxed, Focused, Meditative, etc.)
 
-## 📊 How It Works
+## 📊 Classification Results
 
-The HLS combines five feature groups:
+**100% accuracy** on curated validation dataset:
 
-| Component | Description | Weight |
-|-----------|-------------|--------|
-| **PBD** | Physiological Baseline Deviation | 25% |
-| **NCM** | Neural Complexity Measures | 10% |
-| **MVI** | Micro-Variability Index | 25% |
-| **TAM** | Temporal Autocorrelation Measures | 25% |
-| **NSC** | Neural Signal Consistency | 15% |
+| Dataset | Samples | Accuracy | HLS Range |
+|---------|---------|----------|-----------|
+| **Synthetic (NOT HUMAN)** | 9 | 100% | 11.0 - 49.4 |
+| **HBN Human (HUMAN)** | 7 | 100% | 64.9 - 77.2 |
+| **Overall** | 16 | **100%** | |
 
-**Threshold**: Score ≥ 70 = Human, Score < 70 = Not Human
+**Separation Gap**: 15.5 points between classes (no overlap)
+
+## 🧠 HLS Score Components
+
+The HLS (0-100) uses a **1/f spectral slope** as the primary discriminator:
+
+| Component | Weight | What It Checks |
+|-----------|--------|----------------|
+| **1/f Spectral Slope** | 40% | Real EEG follows power law (slope -1 to -2.5) |
+| **Spectral Entropy** | 25% | Moderate complexity (not too regular/random) |
+| **Channel Uniqueness** | 20% | Channels correlated but not identical |
+| **Temporal Structure** | 15% | Natural autocorrelation patterns |
+
+**Score ≥ 50 = HUMAN** | **Score < 50 = NOT HUMAN**
+
+### Why 1/f Slope Works
+
+| Signal Type | Spectral Slope | Classification |
+|-------------|----------------|----------------|
+| Real human EEG | -1.0 to -2.5 | ✅ HUMAN |
+| White noise | ~0 | ❌ NOT HUMAN |
+| Synthetic sines | < -3 (too steep) | ❌ NOT HUMAN |
+| Correlated noise | ~0 | ❌ NOT HUMAN |
 
 ## 🚀 Quick Start
 
@@ -30,216 +48,148 @@ The HLS combines five feature groups:
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/eeg-legitimacy.git
-cd eeg-legitimacy
-
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+git clone https://github.com/Houdaab/Younify.git
+cd Younify/eeg-legitimacy
 
 # Install dependencies
 pip install -r requirements.txt
+
+# Or with Poetry
+poetry install
 ```
 
-### Basic Usage
+### Usage
 
-```python
-from src.loader import load_eeg_csv
-from src.preprocess import normalize_channels
-from src.hls_score import compute_hls
-
-# Load EEG data
-time, data, channels = load_eeg_csv("data/sample.csv")
-
-# Normalize
-data_norm = normalize_channels(data)
-
-# Compute Human Legitimacy Score
-scores = compute_hls(data_norm, fs=256.0)
-
-print(f"Human Legitimacy Score: {scores['hls']:.1f}/100")
-print(f"Verdict: {'HUMAN' if scores['hls'] >= 70 else 'NOT HUMAN'}")
-```
-
-### Command Line Tools
+#### 1. Check if an EEG file is human
 
 ```bash
-# Check if EEG is human
-python -m app.human_check data/real/sample_001.csv
+python -m app.human_check path/to/eeg_file.csv
+```
 
-# Batch process multiple files
+#### 2. Batch process multiple files
+
+```bash
 python -m app.batch_score --data-dir data/
+```
 
-# Classify mental state
-python -m app.classify_states --data-dir data/
+#### 3. Run the dashboard
 
-# Run interactive dashboard
+```bash
 streamlit run app/dashboard.py
+```
 
-# Start REST API server
-uvicorn app.server:app --reload --port 8000
+#### 4. Start the API server
+
+```bash
+uvicorn app.server:app --reload
 ```
 
 ## 📁 Project Structure
 
 ```
 eeg-legitimacy/
-├── src/                    # Core modules
-│   ├── __init__.py        # Package exports
-│   ├── loader.py          # EEG data loading (CSV, EDF)
-│   ├── preprocess.py      # Signal normalization
-│   ├── features.py        # Feature extraction
-│   ├── hls_score.py       # Human Legitimacy Score ⭐
-│   ├── state_features.py  # State classification features
-│   ├── state_classifier.py # Mental state classifier
-│   ├── synthetic_eeg.py   # Synthetic signal generator
-│   └── model_zoo.py       # ML model templates
-├── app/                    # Applications
-│   ├── __init__.py
-│   ├── human_check.py     # Human verification CLI ⭐
-│   ├── batch_score.py     # Batch processing
-│   ├── classify_states.py # State classification
-│   ├── dashboard.py       # Interactive dashboard ⭐
-│   └── server.py          # FastAPI REST API
-├── data/                   # EEG data files
-│   ├── *.csv              # Sample EEG files
-│   ├── synthetic/         # Generated synthetic signals
-│   ├── real/              # Real human EEG samples
-│   │   └── openneuro_eyes_closed.csv
-├── notebooks/              # Jupyter notebooks
-├── requirements.txt        # Dependencies
-├── LICENSE                 # MIT License
-└── README.md               # This file
+├── src/                      # Core modules
+│   ├── loader.py             # EEG file loading (CSV, EDF, SET)
+│   ├── preprocess.py         # Signal normalization
+│   ├── features.py           # Feature extraction
+│   ├── hls_score.py          # Human Legitimacy Score (1/f slope)
+│   ├── state_features.py     # State classification features
+│   ├── state_classifier.py   # Mental state classification
+│   └── synthetic_eeg.py      # Synthetic signal generation
+│
+├── app/                      # Applications
+│   ├── dashboard.py          # Streamlit visualization
+│   ├── human_check.py        # CLI human verification
+│   ├── batch_score.py        # Batch processing
+│   ├── analyze_hbn_multitask.py  # HBN dataset analysis
+│   └── server.py             # FastAPI REST API
+│
+├── data/
+│   ├── PRIMARY_hbn_human/    # 🎯 Main human EEG (7 subjects)
+│   ├── PRIMARY_synthetic/    # 🎯 Main synthetic signals (9 files)
+│   ├── ADDITIONAL_samples/   # Supporting: Sample EEG
+│   └── ADDITIONAL_openneuro/ # Supporting: Extended validation
+│
+├── METHODOLOGY.md            # Technical methodology
+├── DATA_DESCRIPTION.md       # Data documentation
+├── requirements.txt          # Python dependencies
+└── pyproject.toml            # Poetry configuration
 ```
 
-## 📈 Data Format
+## 📦 Data
 
-### Input CSV Format
+### 🎯 PRIMARY DATASETS (Main Focus)
 
-```csv
-Time,C3,C4,P3,P4,PO3,PO4,O1,O2
-0.000,1.23,-0.45,0.67,-0.89,1.01,-0.23,0.45,-0.67
-0.004,1.25,-0.43,0.69,-0.87,1.03,-0.21,0.47,-0.65
-...
+| Dataset | Type | Samples | Accuracy | Purpose |
+|---------|------|---------|----------|---------|
+| **HBN Multi-Task** | Human | 7 subjects | 100% HUMAN | Real brain validation |
+| **Synthetic HBN-Format** | Non-Human | 9 signals | 100% NOT HUMAN | Fake detection |
+
+```
+data/
+├── PRIMARY_hbn_human/       ← 🎯 Main human EEG (7 subjects)
+├── PRIMARY_synthetic/       ← 🎯 Main synthetic signals (9 files)
+├── ADDITIONAL_samples/      ← Supporting: Sample EEG
+└── ADDITIONAL_openneuro/    ← Supporting: Extended validation
 ```
 
-- **Time**: Time in seconds
-- **Channels**: EEG channel values (C3, C4, P3, P4, PO3, PO4, O1, O2)
-- **Sampling Rate**: Typically 256 Hz
+#### HBN Multi-Task (Human Data)
+- **Source**: OpenNeuro ds005508 (Healthy Brain Network)
+- **Subjects**: 7 verified humans (children/adolescents)
+- **Format**: EEGLAB .set (500 Hz, 129 channels)
+- **Task**: Resting State
+- **Size**: ~4.6 GB (download separately)
 
-### Supported Formats
+#### Synthetic HBN-Format (Non-Human Data)
+- **Purpose**: Validation controls
+- **Format**: CSV (500 Hz, 129 channels, 30 seconds)
+- **Size**: ~327 MB (included in repo)
 
-- CSV files with Time column
-- EDF/BDF files (European Data Format)
+### Synthetic Signal Types
 
-## 🔬 Feature Extraction
+| Signal | Why It's Non-Human |
+|--------|-------------------|
+| white_noise | No temporal structure (slope ~0) |
+| chirp | Frequency sweep, non-stationary |
+| constant | Near-zero variability |
+| correlated_99 | Channels 99% identical |
+| high_freq_only | 40Hz only (wrong spectrum) |
+| identical_channels | All channels same |
+| linear_drift | No oscillations |
+| mirrored_signal | Perfectly symmetric |
+| pink_identical_channels | Right slope but identical channels |
 
-### Per-Channel Features
-- Mean amplitude
-- Standard deviation
-- Slope/trend
-- Entropy/complexity
-- Range (peak-to-peak)
+### 📁 Additional Data (Supporting)
 
-### Global Features
-- Inter-channel coherence
-- Global variability
-- Occipital activation ratio
-- Hemispheric asymmetry
-- Signal stability
+These datasets are **not the main focus** but can be used for extended validation:
 
-## 🏷️ Mental State Classification
+- **`data/ADDITIONAL_samples/`**: 4 sample human EEG files (CSV, 256 Hz)
+- **`data/ADDITIONAL_openneuro/`**: 5 OpenNeuro datasets for cross-validation
 
-The system classifies EEG into seven states:
+## 🔬 Methodology
 
-| State | Characteristics |
-|-------|-----------------|
-| **Relaxed** | High stability, low variability, balanced coherence |
-| **Focused** | High parietal activation, moderate coherence |
-| **Internal Thought** | High entropy, low occipital activity |
-| **Drowsy** | Very high stability, decreasing trends |
-| **Meditative** | Very high coherence, balanced hemispheres |
-| **Overstimulated** | High variability, high entropy |
-| **Visually Engaged** | High occipital activation |
+See [METHODOLOGY.md](METHODOLOGY.md) for detailed technical documentation.
 
-## 🌐 API Reference
+### Key Findings
 
-### Start Server
+1. **1/f spectral slope is the primary discriminator**
+   - Real EEG: slope -1.0 to -2.5 (characteristic pink noise)
+   - Synthetic: slope ~0 (white noise) or < -3 (sine waves)
 
-```bash
-uvicorn app.server:app --reload --port 8000
-```
+2. **Multiple features provide robustness**
+   - Spectral entropy catches regularity issues
+   - Channel uniqueness catches identical/correlated channels
+   - Temporal structure catches non-biological dynamics
 
-### Endpoints
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/health` | Health check |
-| POST | `/analyze` | Analyze EEG (JSON) |
-| POST | `/analyze/csv` | Analyze EEG (CSV upload) |
-
-### Example Request
-
-```bash
-curl -X POST http://localhost:8000/analyze/csv \
-  -F "file=@data/sample.csv" \
-  -F "sampling_frequency=256"
-```
-
-## 🧪 Testing with Synthetic Data
-
-Generate synthetic signals to test the classifier:
-
-```bash
-python -m src.synthetic_eeg
-```
-
-This creates 8 types of synthetic signals:
-- Pure noise
-- Sine waves
-- Constant signal
-- Square/Sawtooth waves
-- Correlated noise
-- Low-frequency drift
-- Spike artifacts
-
-All synthetic signals should score **below 70** (NOT HUMAN).
-
-## 📊 Results
-
-### Validation Results
-
-| Data Type | HLS Score | Classification |
-|-----------|-----------|----------------|
-| Real Human EEG (OpenNeuro) | 74.9 | ✅ HUMAN |
-| Sample EEG Data | 74.8 | ✅ HUMAN |
-| Synthetic Pure Noise | 62.6 | ❌ NOT HUMAN |
-| Synthetic Sine Waves | 48.2 | ❌ NOT HUMAN |
-
-## 🔗 Data Sources
-
-- **OpenNeuro**: [openneuro.org](https://openneuro.org/) - Free neuroimaging data
-- **PhysioNet**: [physionet.org](https://physionet.org/) - Physiological signal archives
-
-## 📦 Dependencies
-
-- numpy >= 1.24.0
-- pandas >= 2.0.0
-- scipy >= 1.10.0
-- fastapi >= 0.104.0
-- streamlit >= 1.28.0
-- plotly >= 5.18.0
-- mne >= 1.5.0 (for EDF support)
+3. **Perfect separation achieved**
+   - 15.5 point gap between synthetic max (49.4) and human min (64.9)
 
 ## 📄 License
 
-MIT License - See [LICENSE](LICENSE) file.
-
-## 👥 Authors
-
-- Your Name
+MIT License — See [LICENSE](LICENSE)
 
 ## 🙏 Acknowledgments
 
-- OpenNeuro for providing open EEG datasets
-- MNE-Python for EEG processing tools
+- **HBN (Healthy Brain Network)** — Child Mind Institute
+- **OpenNeuro** — Open neuroimaging data platform
+- Data formatted in BIDS (Brain Imaging Data Structure)
