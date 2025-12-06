@@ -1,14 +1,46 @@
-# Younify EEG Legitimacy Classifier
+# Younify — Human Brain Verification Platform
 
-**Human Legitimacy Score (HLS)** — A system to verify if an EEG signal comes from a real human brain.
+**A comprehensive system for verifying human brain signals, tracking brain states on a blockchain, and managing multimedia content.**
 
 ## 🎯 What This Does
 
-1. **Human vs Non-Human Classification** — Detect if EEG is from a real brain or synthetic/AI-generated
-2. **Identity Consistency** — Verify that the same person shows stable brain signatures across different tasks
-3. **State Classification** — Identify mental states (Relaxed, Focused, Meditative, etc.)
+Younify combines three core systems:
 
-## 📊 Classification Results
+1. **EEG Legitimacy Analysis** — Verify if EEG signals come from real human brains using the Human Legitimacy Score (HLS)
+2. **Brain State Blockchain** — Immutably track brain state sequences using a blockchain stored in MongoDB
+3. **Content Management** — Upload and manage videos and EEG sessions with human verification
+
+## 🏗️ System Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    FastAPI Server (app/server.py)           │
+├─────────────────────────────────────────────────────────────┤
+│                                                               │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐     │
+│  │   EEG APIs   │  │  Blockchain  │  │ Video/Upload │     │
+│  │              │  │     APIs     │  │     APIs     │     │
+│  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘     │
+│         │                  │                  │              │
+│         └──────────────────┼──────────────────┘             │
+│                            │                                 │
+│  ┌─────────────────────────┴─────────────────────────┐     │
+│  │         Core Analysis Modules (src/)               │     │
+│  │  • HLS Scoring  • Feature Extraction              │     │
+│  │  • State Classification  • Signal Processing      │     │
+│  └────────────────────────────────────────────────────┘     │
+│                            │                                 │
+└────────────────────────────┼─────────────────────────────────┘
+                             │
+                ┌────────────┴────────────┐
+                │                         │
+         ┌──────▼──────┐          ┌──────▼──────┐
+         │  MongoDB    │          │  File System │
+         │  (Blockchain)│          │  (Uploads)   │
+         └─────────────┘          └──────────────┘
+```
+
+## 📊 EEG Legitimacy Classification
 
 **100% accuracy** on curated validation dataset:
 
@@ -20,7 +52,7 @@
 
 **Separation Gap**: 15.5 points between classes (no overlap)
 
-## 🧠 HLS Score Components
+### HLS Score Components
 
 The HLS (0-100) uses a **1/f spectral slope** as the primary discriminator:
 
@@ -44,6 +76,12 @@ The HLS (0-100) uses a **1/f spectral slope** as the primary discriminator:
 
 ## 🚀 Quick Start
 
+### Prerequisites
+
+- Python 3.9+
+- Docker & Docker Compose (for MongoDB)
+- pip or Poetry
+
 ### Installation
 
 ```bash
@@ -58,9 +96,21 @@ pip install -r requirements.txt
 poetry install
 ```
 
+### Setup MongoDB
+
+```bash
+# Start MongoDB using Docker Compose
+docker-compose up -d
+
+# Verify MongoDB is running
+docker ps | grep mongo
+```
+
+MongoDB will be available at `mongodb://admin:secret@localhost:27017`
+
 ### Usage
 
-#### 1. Check if an EEG file is human
+#### 1. Check if an EEG file is human (CLI)
 
 ```bash
 python -m app.human_check path/to/eeg_file.csv
@@ -72,7 +122,7 @@ python -m app.human_check path/to/eeg_file.csv
 python -m app.batch_score --data-dir data/
 ```
 
-#### 3. Run the dashboard
+#### 3. Run the interactive dashboard
 
 ```bash
 streamlit run app/dashboard.py
@@ -81,40 +131,158 @@ streamlit run app/dashboard.py
 #### 4. Start the API server
 
 ```bash
-uvicorn app.server:app --reload
+uvicorn app.server:app --reload --port 8000
+```
+
+API documentation available at:
+- Swagger UI: http://localhost:8000/docs
+- ReDoc: http://localhost:8000/redoc
+
+## 📡 API Endpoints
+
+### EEG Analysis
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/analyze` | POST | Analyze EEG data (JSON input) |
+| `/analyze/csv` | POST | Analyze EEG data (CSV file upload) |
+| `/health` | GET | Health check |
+
+### Brain State Blockchain
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/chains/new` | POST | Create a new brain state chain |
+| `/chains` | GET | List all chain summaries |
+| `/chain/{chain_id}` | GET | Get full chain by ID |
+| `/chain/{chain_id}/add_node` | POST | Add a new brain state node |
+| `/supply_data/{user_id}` | POST | Upload EEG, verify human, update chain |
+
+### Video Management
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/upload` | POST | Upload video file |
+| `/videos` | GET | List all uploaded videos |
+
+### Example: Upload EEG and Verify Human
+
+```bash
+curl -X POST "http://localhost:8000/supply_data/user123" \
+  -F "file=@path/to/eeg.csv"
+```
+
+Response:
+```json
+{
+  "message": "EEG uploaded and verified",
+  "user_id": "user123",
+  "eeg_file": "uuid.csv",
+  "is_human": true,
+  "chain_id": "chain-uuid",
+  "hls_score": 72.5,
+  "verdict": "HUMAN"
+}
 ```
 
 ## 📁 Project Structure
 
 ```
 eeg-legitimacy/
-├── src/                      # Core modules
-│   ├── loader.py             # EEG file loading (CSV, EDF, SET)
-│   ├── preprocess.py         # Signal normalization
-│   ├── features.py           # Feature extraction
-│   ├── hls_score.py          # Human Legitimacy Score (1/f slope)
-│   ├── state_features.py     # State classification features
-│   ├── state_classifier.py   # Mental state classification
-│   └── synthetic_eeg.py      # Synthetic signal generation
+├── src/                          # Core analysis modules
+│   ├── loader.py                 # EEG file loading (CSV, EDF, SET)
+│   ├── preprocess.py             # Signal normalization
+│   ├── features.py               # Feature extraction
+│   ├── hls_score.py              # Human Legitimacy Score (1/f slope)
+│   ├── state_features.py         # State classification features
+│   ├── state_classifier.py       # Mental state classification
+│   ├── synthetic_eeg.py          # Synthetic signal generation
+│   └── model_zoo.py              # ML model templates
 │
-├── app/                      # Applications
-│   ├── dashboard.py          # Streamlit visualization
-│   ├── human_check.py        # CLI human verification
-│   ├── batch_score.py        # Batch processing
+├── app/                          # Applications & API
+│   ├── server.py                 # FastAPI server (main API)
+│   ├── dashboard.py              # Streamlit visualization
+│   ├── human_check.py            # CLI human verification
+│   ├── batch_score.py            # Batch processing
 │   ├── analyze_hbn_multitask.py  # HBN dataset analysis
-│   └── server.py             # FastAPI REST API
+│   │
+│   ├── blockchain.py            # Brain state blockchain logic
+│   ├── db.py                     # MongoDB database operations
+│   │
+│   ├── models/                   # Pydantic models
+│   │   ├── api.py                # API request/response models
+│   │   └── internal.py           # Internal data models
+│   │
+│   ├── test_brain_sessions_upload/  # EEG upload tests
+│   └── test_video_upload/          # Video upload tests
 │
 ├── data/
-│   ├── PRIMARY_hbn_human/    # 🎯 Main human EEG (7 subjects)
-│   ├── PRIMARY_synthetic/    # 🎯 Main synthetic signals (9 files)
-│   ├── ADDITIONAL_samples/   # Supporting: Sample EEG
-│   └── ADDITIONAL_openneuro/ # Supporting: Extended validation
+│   ├── PRIMARY_hbn_human/        # 🎯 Main human EEG (7 subjects)
+│   ├── PRIMARY_synthetic/        # 🎯 Main synthetic signals (9 files)
+│   ├── ADDITIONAL_samples/       # Supporting: Sample EEG
+│   └── ADDITIONAL_openneuro/     # Supporting: Extended validation
 │
-├── METHODOLOGY.md            # Technical methodology
-├── DATA_DESCRIPTION.md       # Data documentation
-├── requirements.txt          # Python dependencies
-└── pyproject.toml            # Poetry configuration
+├── notebooks/                    # Jupyter notebooks (analysis)
+│
+├── docker-compose.yaml           # MongoDB setup
+├── METHODOLOGY.md                # Technical methodology
+├── DATA_DESCRIPTION.md           # Data documentation
+├── requirements.txt              # Python dependencies
+└── pyproject.toml                # Poetry configuration
 ```
+
+## 🔗 System Components
+
+### 1. EEG Legitimacy Analysis
+
+**Purpose**: Verify if EEG signals are from real human brains
+
+**Key Features**:
+- Human Legitimacy Score (HLS) calculation
+- 1/f spectral slope analysis
+- Multi-feature classification
+- State classification (Relaxed, Focused, Meditative, etc.)
+
+**Files**:
+- `src/hls_score.py` — Core HLS computation
+- `src/features.py` — Feature extraction
+- `app/human_check.py` — CLI tool
+- `app/dashboard.py` — Interactive visualization
+
+### 2. Brain State Blockchain
+
+**Purpose**: Immutably track sequences of brain states
+
+**Key Features**:
+- SHA-256 hashed blockchain nodes
+- Chain integrity verification
+- MongoDB persistence
+- User metadata (name, gender)
+
+**Files**:
+- `app/blockchain.py` — Blockchain logic
+- `app/db.py` — MongoDB operations
+- `app/models/internal.py` — Data models
+
+**How It Works**:
+1. Each brain state is a node with: `state_data`, `previous_hash`, `hash`, `timestamp`
+2. Nodes are linked via `previous_hash` → `hash` chain
+3. Full chain stored in MongoDB document
+4. Chain can be verified for integrity
+
+### 3. Content Management
+
+**Purpose**: Upload and manage videos and EEG sessions
+
+**Key Features**:
+- Video file upload (MP4, MOV, AVI, etc.)
+- EEG CSV upload with automatic human verification
+- File storage and listing
+- Integration with blockchain system
+
+**Files**:
+- `app/server.py` — Upload endpoints
+- Upload directories: `app/uploaded_videos/`, `app/uploaded_brain_sessions/`
 
 ## 📦 Data
 
@@ -184,6 +352,66 @@ See [METHODOLOGY.md](METHODOLOGY.md) for detailed technical documentation.
 3. **Perfect separation achieved**
    - 15.5 point gap between synthetic max (49.4) and human min (64.9)
 
+## 🗄️ Database Schema
+
+### MongoDB Collection: `brain_states`
+
+```json
+{
+  "_id": "uuid",
+  "first_name": "John",
+  "last_name": "Doe",
+  "gender": "male",
+  "is_human": true,
+  "nodes": [
+    {
+      "state_data": "0,1,1,0,1,0,0,1",
+      "previous_hash": "",
+      "hash": "abc123...",
+      "timestamp": "2024-01-01T00:00:00Z"
+    },
+    {
+      "state_data": "0,1,1,1,1,0,1,0",
+      "previous_hash": "abc123...",
+      "hash": "def456...",
+      "timestamp": "2024-01-01T00:01:00Z"
+    }
+  ]
+}
+```
+
+## 🧪 Testing
+
+### Test EEG Upload
+
+```bash
+python app/test_brain_sessions_upload/test_brain_session_upload.py
+```
+
+### Test Video Upload
+
+```bash
+python app/test_video_upload/test_video_upload.py
+```
+
+## 🔧 Configuration
+
+### MongoDB Connection
+
+Default connection string (in `app/db.py`):
+```python
+MONGO_URI = "mongodb://admin:secret@localhost:27017/?authSource=admin"
+DB_NAME = "brain_chain_db"
+COLLECTION_NAME = "brain_states"
+```
+
+### HLS Threshold
+
+Default threshold (in `src/hls_score.py`):
+```python
+HUMAN_THRESHOLD = 50  # Score >= 50 = HUMAN
+```
+
 ## 📄 License
 
 MIT License — See [LICENSE](LICENSE)
@@ -193,3 +421,14 @@ MIT License — See [LICENSE](LICENSE)
 - **HBN (Healthy Brain Network)** — Child Mind Institute
 - **OpenNeuro** — Open neuroimaging data platform
 - Data formatted in BIDS (Brain Imaging Data Structure)
+
+## 🤝 Contributing
+
+1. Create a feature branch: `git checkout -b feature/your-feature`
+2. Make your changes
+3. Test thoroughly
+4. Submit a pull request
+
+## 📞 Support
+
+For questions or issues, please open an issue on GitHub.
