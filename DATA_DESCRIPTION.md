@@ -4,7 +4,7 @@
 
 ### 1.1 Real Human EEG Data
 
-#### Source 1: Sample EEG Files (`data/sample-eeg-data.csv`)
+#### Source 1: Sample EEG Files (`data/real/sample_*.csv`)
 ```
 Format: CSV
 Columns: Time, C3, C4, P3, P4, PO3, PO4, O1, O2
@@ -31,7 +31,7 @@ Duration: ~29 seconds
 
 ---
 
-#### Source 2: OpenNeuro Real Human EEG (`data/openneuro/real_human_openneuro.csv`)
+#### Source 2: OpenNeuro Real Human EEG (`data/real/openneuro_eyes_closed.csv`)
 
 ```
 Dataset: ds004504

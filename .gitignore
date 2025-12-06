@@ -38,19 +38,15 @@ env/
 .ipynb_checkpoints/
 *.ipynb_checkpoints
 
-# Data files (keep structure, ignore large files)
-data/openneuro/ds*/
-data/openneuro/*.edf
-data/openneuro/*.set
+# Raw EEG files (large binary formats)
 *.edf
 *.bdf
 *.set
 *.fif
 
 # Keep sample data
-!data/*.csv
+!data/real/*.csv
 !data/synthetic/*.csv
-!data/openneuro/*.csv
 
 # Logs
 *.log

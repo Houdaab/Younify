@@ -65,7 +65,7 @@ print(f"Verdict: {'HUMAN' if scores['hls'] >= 70 else 'NOT HUMAN'}")
 
 ```bash
 # Check if EEG is human
-python -m app.human_check data/sample-eeg-data.csv
+python -m app.human_check data/real/sample_001.csv
 
 # Batch process multiple files
 python -m app.batch_score --data-dir data/
@@ -104,7 +104,8 @@ eeg-legitimacy/
 ├── data/                   # EEG data files
 │   ├── *.csv              # Sample EEG files
 │   ├── synthetic/         # Generated synthetic signals
-│   └── openneuro/         # Downloaded real human EEG
+│   ├── real/              # Real human EEG samples
+│   │   └── openneuro_eyes_closed.csv
 ├── notebooks/              # Jupyter notebooks
 ├── requirements.txt        # Dependencies
 ├── LICENSE                 # MIT License

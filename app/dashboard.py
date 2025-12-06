@@ -39,7 +39,7 @@ HUMAN_THRESHOLD = 70
 
 # Sampling rates for different data sources
 SAMPLING_RATES = {
-    "openneuro": 500.0,
+    "openneuro_eyes_closed": 500.0,
     "default": 256.0
 }
 
@@ -170,18 +170,15 @@ def main():
     st.divider()
     
     # File paths
-    real_dir = Path("data")
-    openneuro_dir = Path("data/openneuro")
+    real_dir = Path("data/real")
     synthetic_dir = Path("data/synthetic")
     
-    # Get file lists - combine data/ and data/openneuro/ for real EEG
-    real_files = [f for f in sorted(real_dir.glob("*.csv")) if "ALAS" not in f.name]
-    if openneuro_dir.exists():
-        real_files.extend(sorted(openneuro_dir.glob("*.csv")))
+    # Get file lists
+    real_files = sorted(real_dir.glob("*.csv")) if real_dir.exists() else []
     synthetic_files = sorted(synthetic_dir.glob("*.csv")) if synthetic_dir.exists() else []
     
     if not real_files:
-        st.warning("No real EEG files found in data/")
+        st.warning("No real EEG files found in data/real/")
         return
     if not synthetic_files:
         st.warning("No synthetic files found. Run: python -m src.synthetic_eeg")

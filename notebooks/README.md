@@ -30,7 +30,7 @@ from src.hls_score import compute_hls
 from src.preprocess import normalize_channels
 
 # Load data
-time, data, channels = load_eeg_csv('../data/sample-eeg-data.csv')
+time, data, channels = load_eeg_csv('../data/real/sample_001.csv')
 
 # Compute HLS
 data_norm = normalize_channels(data)
