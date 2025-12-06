@@ -12,16 +12,22 @@ db = client[DB_NAME]
 collection = db[COLLECTION_NAME]
 
 # ------------------------
-# DB Methods
+# DB Methods for single chain document
 # ------------------------
-def get_last_node() -> dict | None:
-    """Get the most recent node in the chain"""
-    return collection.find_one(sort=[("_id", pymongo.DESCENDING)])
+CHAIN_DOC_ID = "brain_chain_main"  # fixed _id for single document
 
-def insert_node(node_dict: dict) -> None:
-    """Insert a node dict into MongoDB"""
-    collection.insert_one(node_dict)
+def get_chain_document() -> dict:
+    """Get the single chain document, create if not exists"""
+    doc = collection.find_one({"_id": CHAIN_DOC_ID})
+    if not doc:
+        doc = {"_id": CHAIN_DOC_ID, "nodes": []}
+        collection.insert_one(doc)
+    return doc
 
-def get_all_nodes() -> list[dict]:
-    """Get all nodes in chronological order"""
-    return list(collection.find().sort("timestamp", pymongo.ASCENDING))
+def update_chain_document(nodes: list[dict]) -> None:
+    """Update the nodes array in the chain document"""
+    collection.update_one(
+        {"_id": CHAIN_DOC_ID},
+        {"$set": {"nodes": nodes}},
+        upsert=True
+    )
