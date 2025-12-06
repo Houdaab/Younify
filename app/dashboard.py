@@ -169,19 +169,26 @@ def main():
     
     st.divider()
     
-    # File paths
-    real_dir = Path("data/real")
-    synthetic_dir = Path("data/synthetic")
+    # File paths (try new names first, fallback to old for compatibility)
+    real_dir = Path("data/ADDITIONAL_samples")
+    if not real_dir.exists():
+        real_dir = Path("data/real")  # Fallback
+    
+    synthetic_dir = Path("data/PRIMARY_synthetic")
+    if not synthetic_dir.exists():
+        synthetic_dir = Path("data/synthetic_hbn_format")  # Fallback
+        if not synthetic_dir.exists():
+            synthetic_dir = Path("data/synthetic")  # Old fallback
     
     # Get file lists
     real_files = sorted(real_dir.glob("*.csv")) if real_dir.exists() else []
     synthetic_files = sorted(synthetic_dir.glob("*.csv")) if synthetic_dir.exists() else []
     
     if not real_files:
-        st.warning("No real EEG files found in data/real/")
+        st.warning(f"No real EEG files found in {real_dir}/")
         return
     if not synthetic_files:
-        st.warning("No synthetic files found. Run: python -m src.synthetic_eeg")
+        st.warning(f"No synthetic files found in {synthetic_dir}/")
         return
     
     # Selection

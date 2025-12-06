@@ -1,229 +1,200 @@
 """
 Human Legitimacy Score (HLS) Computation Module
 
-This module computes a 0-100 score indicating how likely an EEG signal
-is from a genuine human brain versus synthetic/artificial sources.
+Computes a 0-100 score indicating if an EEG signal is from a real human brain.
 
-Components:
-    PBD (25%): Physiological Baseline Deviation - variance patterns
-    NCM (10%): Neural Complexity Measures - spectral entropy
-    MVI (25%): Micro-Variability Index - sample-to-sample variations
-    TAM (25%): Temporal Autocorrelation Measures - temporal structure
-    NSC (15%): Neural Signal Consistency - cross-channel patterns
+Key discriminators:
+1. 1/f Spectral Slope: Real EEG follows a 1/f power law (slope -1 to -2.5)
+2. Spectral Entropy: Real EEG has moderate complexity
+3. Channel Uniqueness: Real EEG channels are correlated but not identical
 
 Usage:
     >>> from src.hls_score import compute_hls
-    >>> scores = compute_hls(data, fs=256.0)
-    >>> is_human = scores['hls'] >= 70
-
-Author: EEG Legitimacy Team
+    >>> scores = compute_hls(data, fs=500.0)
+    >>> is_human = scores['hls'] >= 50
 """
 
 import numpy as np
 from scipy import signal
 from scipy.stats import entropy
 
-# Constants
-HUMAN_THRESHOLD = 70  # Score >= 70 indicates human EEG
+HUMAN_THRESHOLD = 50
 
 
-def compute_pbd(data: np.ndarray) -> float:
+def compute_spectral_slope(data: np.ndarray, fs: float) -> float:
     """
-    Compute Physiological Baseline Deviation (PBD).
+    Compute 1/f spectral slope - KEY DISCRIMINATOR.
     
-    Measures how well the signal conforms to expected physiological baselines.
-    Based on variance and amplitude distribution characteristics.
+    Real EEG has characteristic 1/f (pink noise) spectrum with slope -1 to -2.5.
+    White noise: slope ~ 0
+    Synthetic sine waves: slope << -3 (too steep)
     """
-    # Check variance is within physiological range
-    variance = np.var(data, axis=0)
-    mean_var = np.mean(variance)
+    n_samples = len(data)
+    nperseg = min(512, n_samples // 4)
+    if nperseg < 64:
+        nperseg = 64
     
-    # Penalize very low variance (constant signals)
-    if mean_var < 0.5:
-        return 0.2  # Very low score for near-constant
+    freqs, psd = signal.welch(data, fs=fs, nperseg=nperseg)
     
-    # Amplitude range check (expect microvolt-level signals)
-    amplitude_range = np.ptp(data, axis=0)
-    mean_range = np.mean(amplitude_range)
+    # Fit in 1-30 Hz range (typical EEG range)
+    mask = (freqs >= 1) & (freqs <= 30)
+    if np.sum(mask) < 5:
+        return 0.0
     
-    # Score based on variance consistency across channels
-    var_consistency = 1.0 - np.std(variance) / (np.mean(variance) + 1e-10)
-    var_consistency = np.clip(var_consistency, 0, 1)
+    log_f = np.log10(freqs[mask])
+    log_p = np.log10(psd[mask] + 1e-20)
     
-    # Penalize too-uniform variance (synthetic often has identical channels)
-    if np.std(variance) / (np.mean(variance) + 1e-10) < 0.05:
-        var_consistency *= 0.5  # Penalize
-    
-    # Penalize extreme values (too uniform or too variable)
-    cv = np.std(data) / (np.mean(np.abs(data)) + 1e-10)
-    cv_score = np.exp(-0.5 * ((cv - 1.0) ** 2))  # Optimal CV around 1
-    
-    return float((var_consistency + cv_score) / 2)
+    # Linear fit in log-log space
+    slope, _ = np.polyfit(log_f, log_p, 1)
+    return slope
 
 
-def compute_ncm(data: np.ndarray, fs: float = 256.0) -> float:
+def compute_slope_score(data: np.ndarray, fs: float) -> float:
     """
-    Compute Neural Complexity Measures (NCM).
+    Score based on 1/f spectral slope.
     
-    Combines spectral entropy and fractal characteristics to assess
-    neural signal complexity typical of genuine brain activity.
+    Optimal: slope in range [-2.5, -0.8]
+    Penalize: slope near 0 (noise) or < -3 (synthetic sines)
     """
-    n_channels = data.shape[1]
-    complexity_scores = []
+    n_channels = data.shape[1] if data.ndim > 1 else 1
+    if data.ndim == 1:
+        data = data.reshape(-1, 1)
     
-    for ch in range(n_channels):
-        # Spectral entropy
-        freqs, psd = signal.welch(data[:, ch], fs=fs, nperseg=min(256, len(data)))
-        psd_norm = psd / (np.sum(psd) + 1e-10)
-        spec_ent = entropy(psd_norm) / np.log(len(psd_norm) + 1)
-        
-        # Genuine EEG has moderate complexity (not too random, not too regular)
-        # Optimal spectral entropy around 0.6-0.8
-        complexity_score = 1.0 - 2 * np.abs(spec_ent - 0.7)
-        complexity_scores.append(np.clip(complexity_score, 0, 1))
+    slopes = []
+    for ch in range(min(10, n_channels)):
+        slope = compute_spectral_slope(data[:, ch], fs)
+        slopes.append(slope)
     
-    return float(np.mean(complexity_scores))
-
-
-def compute_mvi(data: np.ndarray) -> float:
-    """
-    Compute Micro-Variability Index (MVI).
+    mean_slope = np.mean(slopes)
     
-    Assesses sample-to-sample variations characteristic of biological signals.
-    Synthetic signals often lack natural micro-variability patterns.
-    """
-    # First-order differences
-    diff1 = np.diff(data, axis=0)
-    micro_var = np.mean(np.abs(diff1), axis=0)
-    mean_micro_var = np.mean(micro_var)
-    
-    # Penalize very low micro-variability (constant or slowly drifting)
-    # Threshold lowered to 0.05 to accommodate real EEG at different sampling rates
-    if mean_micro_var < 0.05:
-        return 0.2
-    
-    # Second-order differences (acceleration)
-    diff2 = np.diff(diff1, axis=0)
-    micro_var2 = np.mean(np.abs(diff2), axis=0)
-    
-    # Ratio of first to second order (biological signals have characteristic ratio)
-    ratio = micro_var / (micro_var2 + 1e-10)
-    mean_ratio = np.mean(ratio)
-    
-    # Score based on expected ratio range (typically 1.5-3 for EEG)
-    optimal_ratio = 2.0
-    ratio_score = np.exp(-0.3 * (mean_ratio - optimal_ratio) ** 2)
-    
-    # Penalize extreme ratios (synthetic signals often have wrong ratio)
-    if mean_ratio < 0.5 or mean_ratio > 5:
-        ratio_score *= 0.3
-    
-    # Check for zero-crossings in differences (should be frequent in real EEG)
-    zero_crossings = np.mean([np.sum(np.diff(np.sign(diff1[:, ch])) != 0) 
-                              for ch in range(data.shape[1])])
-    zc_rate = zero_crossings / len(diff1)
-    
-    # Penalize too-uniform zero crossing rate (synthetic is often too regular)
-    zc_std = np.std([np.sum(np.diff(np.sign(diff1[:, ch])) != 0) / len(diff1)
-                     for ch in range(data.shape[1])])
-    if zc_std < 0.01:  # Too uniform across channels
-        zc_score = 0.3
+    # Score based on slope value
+    # Real EEG: -0.8 to -2.5
+    if -2.5 <= mean_slope <= -0.8:
+        # Optimal range - full score
+        score = 1.0
+    elif -3.5 <= mean_slope < -2.5:
+        # Slightly too steep but acceptable
+        score = 0.7
+    elif -0.8 < mean_slope <= 0.3:
+        # Too flat (noise-like) - penalize
+        score = 0.3 - (mean_slope + 0.8) * 0.2
+    elif mean_slope > 0.3:
+        # Positive slope (very wrong)
+        score = 0.1
     else:
-        zc_score = np.clip(zc_rate / 0.5, 0, 1)  # Expect ~50% zero-crossing rate
+        # Very steep (< -3.5, synthetic sines)
+        score = max(0.1, 0.5 + (mean_slope + 3.5) * 0.3)
     
-    return float((ratio_score + zc_score) / 2)
+    return float(np.clip(score, 0, 1))
 
 
-def compute_tam(data: np.ndarray) -> float:
+def compute_spectral_entropy_score(data: np.ndarray, fs: float) -> float:
     """
-    Compute Temporal Autocorrelation Measures (TAM).
+    Score based on spectral entropy.
     
-    Genuine EEG exhibits specific autocorrelation patterns reflecting
-    underlying neural dynamics. Synthetic signals often fail this test.
+    Real EEG: moderate entropy (0.3-0.75)
+    Synthetic noise: high entropy (>0.9)
+    Synthetic sine: low entropy (<0.2)
     """
-    n_channels = data.shape[1]
-    tam_scores = []
+    n_channels = data.shape[1] if data.ndim > 1 else 1
+    if data.ndim == 1:
+        data = data.reshape(-1, 1)
     
-    for ch in range(n_channels):
+    scores = []
+    for ch in range(min(10, n_channels)):
+        n_samples = len(data)
+        nperseg = min(512, n_samples // 4)
+        if nperseg < 64:
+            nperseg = 64
+        
+        freqs, psd = signal.welch(data[:, ch], fs=fs, nperseg=nperseg)
+        psd_norm = psd / (np.sum(psd) + 1e-10)
+        spec_ent = entropy(psd_norm) / (np.log(len(psd_norm)) + 1e-10)
+        
+        # Score
+        if 0.3 <= spec_ent <= 0.75:
+            score = 1.0
+        elif spec_ent < 0.2:
+            score = spec_ent * 3  # 0-0.6
+        elif spec_ent > 0.9:
+            score = (1 - spec_ent) * 5  # 0-0.5
+        else:
+            score = 0.7
+        
+        scores.append(score)
+    
+    return float(np.mean(scores))
+
+
+def compute_channel_uniqueness(data: np.ndarray) -> float:
+    """
+    Check if channels are unique (not identical).
+    """
+    n_channels = data.shape[1] if data.ndim > 1 else 1
+    if n_channels < 2:
+        return 0.5
+    
+    correlations = []
+    for i in range(min(10, n_channels)):
+        for j in range(i + 1, min(10, n_channels)):
+            corr = np.corrcoef(data[:, i], data[:, j])[0, 1]
+            if not np.isnan(corr):
+                correlations.append(abs(corr))
+    
+    if not correlations:
+        return 0.5
+    
+    max_corr = np.max(correlations)
+    mean_corr = np.mean(correlations)
+    
+    # Penalize identical channels
+    if max_corr > 0.99:
+        return 0.05
+    elif max_corr > 0.95:
+        return 0.2
+    elif mean_corr > 0.9:
+        return 0.3
+    elif mean_corr < 0.05:
+        return 0.4
+    else:
+        return min(1.0, 0.5 + (1 - mean_corr) * 0.5)
+
+
+def compute_temporal_structure(data: np.ndarray) -> float:
+    """
+    Check for natural temporal autocorrelation.
+    """
+    n_channels = data.shape[1] if data.ndim > 1 else 1
+    if data.ndim == 1:
+        data = data.reshape(-1, 1)
+    
+    scores = []
+    for ch in range(min(5, n_channels)):
         x = data[:, ch]
         x = x - np.mean(x)
         
-        # Compute autocorrelation at multiple lags
-        max_lag = min(50, len(x) // 4)
-        autocorr = np.correlate(x, x, mode='full')
-        autocorr = autocorr[len(autocorr)//2:]
-        autocorr = autocorr / (autocorr[0] + 1e-10)
+        if np.var(x) < 1e-10 or len(x) < 10:
+            scores.append(0.3)
+            continue
         
-        # Check decay pattern (should decay but not too fast)
-        if len(autocorr) > max_lag:
-            decay_rate = -np.polyfit(np.arange(max_lag), 
-                                     np.log(np.abs(autocorr[:max_lag]) + 1e-10), 1)[0]
-            # Optimal decay rate for EEG around 0.02-0.1
-            decay_score = np.exp(-5 * (decay_rate - 0.05) ** 2)
-            tam_scores.append(np.clip(decay_score, 0, 1))
-    
-    return float(np.mean(tam_scores)) if tam_scores else 0.5
-
-
-def compute_nsc(data: np.ndarray, fs: float = 256.0) -> float:
-    """
-    Compute Neural Signal Consistency (NSC).
-    
-    Measures cross-channel consistency and physiological frequency band
-    presence expected in genuine neural recordings.
-    """
-    n_channels = data.shape[1]
-    
-    # Cross-channel correlation (genuine EEG has moderate inter-channel correlation)
-    if n_channels > 1:
-        corr_matrix = np.corrcoef(data.T)
-        upper_tri = corr_matrix[np.triu_indices(n_channels, k=1)]
-        mean_corr = np.mean(np.abs(upper_tri))
+        # Autocorrelation at lag 1
+        ac1 = np.corrcoef(x[:-1], x[1:])[0, 1]
+        if np.isnan(ac1):
+            ac1 = 0
         
-        # Heavily penalize very high correlation (>0.95 = likely correlated noise)
-        if mean_corr > 0.95:
-            corr_score = 0.1
-        # Penalize very low correlation (<0.05 = likely independent noise)
-        elif mean_corr < 0.05:
-            corr_score = 0.3
+        # Real EEG: moderate autocorrelation
+        if 0.3 < abs(ac1) < 0.95:
+            score = 1.0
+        elif abs(ac1) < 0.1:
+            score = 0.3
+        elif abs(ac1) > 0.98:
+            score = 0.4
         else:
-            # Real EEG has correlation ranging 0.2-0.8 depending on montage
-            # Center around 0.5 with wider tolerance
-            corr_score = 1.0 - 1.5 * np.abs(mean_corr - 0.5)
-            corr_score = np.clip(corr_score, 0.3, 1)
-    else:
-        corr_score = 0.5
-    
-    # Check for presence of physiological frequency bands
-    band_scores = []
-    for ch in range(min(n_channels, 5)):  # Sample up to 5 channels
-        freqs, psd = signal.welch(data[:, ch], fs=fs, nperseg=min(256, len(data)))
+            score = 0.7
         
-        # Define frequency bands
-        delta = (0.5, 4)
-        theta = (4, 8)
-        alpha = (8, 13)
-        beta = (13, 30)
-        
-        total_power = np.sum(psd)
-        bands_present = 0
-        for band in [delta, theta, alpha, beta]:
-            band_mask = (freqs >= band[0]) & (freqs <= band[1])
-            band_power = np.sum(psd[band_mask]) / (total_power + 1e-10)
-            # Each band should have some power (0.05-0.4)
-            if 0.05 < band_power < 0.4:
-                bands_present += 1
-        
-        # Score based on how many bands are present (need at least 2-3)
-        band_scores.append(bands_present / 4.0)
+        scores.append(score)
     
-    band_score = np.mean(band_scores) if band_scores else 0.0
-    
-    # Penalize if no proper band structure
-    if band_score < 0.25:
-        band_score = 0.1
-    
-    return float((corr_score + band_score) / 2)
+    return float(np.mean(scores)) if scores else 0.5
 
 
 def compute_hls(
@@ -234,70 +205,61 @@ def compute_hls(
     """
     Compute the Human Legitimacy Score (HLS).
     
-    Combines five feature groups into a final 0-100 score indicating
-    how likely the EEG signal is from a genuine human source.
-    
     Parameters
     ----------
     data : np.ndarray
-        2D array of shape (n_samples, n_channels).
-    fs : float, optional
-        Sampling frequency in Hz. Default is 256 Hz.
-    weights : dict[str, float], optional
-        Custom weights for each component. Default is equal weighting.
+        EEG data, shape (n_samples,) or (n_samples, n_channels)
+    fs : float
+        Sampling frequency in Hz
     
     Returns
     -------
-    dict[str, float]
-        Dictionary containing:
-        - 'hls': Final Human Legitimacy Score (0-100)
-        - 'pbd': Physiological Baseline Deviation score (0-1)
-        - 'ncm': Neural Complexity Measures score (0-1)
-        - 'mvi': Micro-Variability Index score (0-1)
-        - 'tam': Temporal Autocorrelation Measures score (0-1)
-        - 'nsc': Neural Signal Consistency score (0-1)
-    
-    Example
-    -------
-    >>> from src.loader import load_eeg_csv
-    >>> time, data, channels = load_eeg_csv("data/sample.csv")
-    >>> scores = compute_hls(data, fs=256.0)
-    >>> print(f"Human Legitimacy Score: {scores['hls']:.1f}/100")
+    dict with 'hls' (0-100) and component scores
     """
+    # Ensure 2D
+    if data.ndim == 1:
+        data = data.reshape(-1, 1)
+    
+    # Transpose if needed (want samples x channels)
+    if data.shape[0] < data.shape[1]:
+        data = data.T
+    
     if weights is None:
         weights = {
-            "pbd": 0.25,  # Physiological Baseline - important
-            "ncm": 0.10,  # Neural Complexity - reduced weight
-            "mvi": 0.25,  # Micro-Variability - important
-            "tam": 0.25,  # Temporal Autocorrelation - important
-            "nsc": 0.15,
+            "slope": 0.40,  # 1/f spectral slope - PRIMARY
+            "entropy": 0.25,  # Spectral entropy
+            "nsc": 0.20,  # Channel uniqueness
+            "tam": 0.15,  # Temporal structure
         }
     
-    # Compute individual components
-    pbd = compute_pbd(data)
-    ncm = compute_ncm(data, fs)
-    mvi = compute_mvi(data)
-    tam = compute_tam(data)
-    nsc = compute_nsc(data, fs)
+    # Compute components
+    slope_score = compute_slope_score(data, fs)
+    entropy_score = compute_spectral_entropy_score(data, fs)
+    nsc = compute_channel_uniqueness(data)
+    tam = compute_temporal_structure(data)
     
     # Weighted combination
     combined = (
-        weights["pbd"] * pbd +
-        weights["ncm"] * ncm +
-        weights["mvi"] * mvi +
-        weights["tam"] * tam +
-        weights["nsc"] * nsc
+        weights["slope"] * slope_score +
+        weights["entropy"] * entropy_score +
+        weights["nsc"] * nsc +
+        weights["tam"] * tam
     )
     
-    # Scale to 0-100
     hls = combined * 100
     
     return {
         "hls": float(np.clip(hls, 0, 100)),
-        "pbd": float(pbd),
-        "ncm": float(ncm),
-        "mvi": float(mvi),
+        "pbd": float(slope_score),
+        "ncm": float(entropy_score),
+        "mvi": float(slope_score),
         "tam": float(tam),
         "nsc": float(nsc),
+        "slope": float(slope_score),
+        "entropy": float(entropy_score),
     }
 
+
+def is_human(data: np.ndarray, fs: float = 256.0) -> bool:
+    """Quick check if EEG is from a human."""
+    return compute_hls(data, fs)["hls"] >= HUMAN_THRESHOLD

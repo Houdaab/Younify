@@ -20,17 +20,39 @@ from pathlib import Path
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.loader import load_eeg_csv
+from src.loader import load_eeg_csv, load_eeg_with_metadata, extract_subject_id
 from src.preprocess import normalize_channels
 from src.features import extract_all_features
 from src.hls_score import compute_hls
 
 
-def process_file(filepath: Path, fs: float) -> dict | None:
-    """Process a single EEG file and return results."""
+def process_file(filepath: Path, fs: float, dataset_dir: Path | None = None) -> dict | None:
+    """
+    Process a single EEG file and return results with subject ID tracking.
+    
+    Parameters
+    ----------
+    filepath : Path
+        Path to EEG file
+    fs : float
+        Sampling frequency
+    dataset_dir : Path, optional
+        BIDS dataset root directory (for loading participants.tsv)
+    """
     try:
-        # 1. Load EEG file
-        time, data, channels = load_eeg_csv(filepath)
+        # Try to load with metadata (for BIDS format)
+        subject_id = extract_subject_id(filepath)
+        
+        if subject_id and dataset_dir:
+            # Use metadata loader for BIDS datasets
+            time, data, channels, metadata = load_eeg_with_metadata(
+                filepath, dataset_dir=dataset_dir
+            )
+            subject_id = metadata.get("subject_id")
+        else:
+            # Fall back to regular loader
+            time, data, channels = load_eeg_csv(filepath)
+            subject_id = extract_subject_id(filepath)  # Try to extract from path
         
         # 2. Normalize signal
         data_norm = normalize_channels(data, method="zscore")
@@ -42,6 +64,7 @@ def process_file(filepath: Path, fs: float) -> dict | None:
         scores = compute_hls(data_norm, fs=fs)
         
         return {
+            "subject_id": subject_id,  # Unique person identifier
             "filename": filepath.name,
             "filepath": str(filepath),
             "hls": scores["hls"],
@@ -73,6 +96,12 @@ def main():
         type=float,
         default=256.0,
         help="Sampling frequency in Hz (default: 256)"
+    )
+    parser.add_argument(
+        "--dataset-dir",
+        type=str,
+        default=None,
+        help="BIDS dataset root directory (for subject ID tracking and participants.tsv)"
     )
     args = parser.parse_args()
     
@@ -110,20 +139,24 @@ def main():
     print(f"Files to process: {len(csv_files)}")
     print("=" * 70)
     
+    # Determine dataset directory
+    dataset_dir = Path(args.dataset_dir) if args.dataset_dir else None
+    
     # Table header
-    print(f"\n{'Filename':<50} {'HLS Score':>12}")
-    print("-" * 64)
+    print(f"\n{'Subject ID':<15} {'Filename':<40} {'HLS Score':>12}")
+    print("-" * 70)
     
     results = []
     
     for filepath in csv_files:
-        result = process_file(filepath, args.fs)
+        result = process_file(filepath, args.fs, dataset_dir=dataset_dir)
         
         if result:
-            print(f"{result['filename']:<50} {result['hls']:>10.1f}/100")
+            subject_id = result.get('subject_id', 'N/A')
+            print(f"{subject_id:<15} {result['filename']:<40} {result['hls']:>10.1f}/100")
             results.append(result)
         else:
-            print(f"{filepath.name:<50} {'ERROR':>12}")
+            print(f"{'N/A':<15} {filepath.name:<40} {'ERROR':>12}")
     
     # Summary
     print("-" * 64)
