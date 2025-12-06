@@ -1,6 +1,8 @@
+from typing import Optional, Literal, List
+
 import pymongo
 
-from app.models import UpdateChainRequest, BrainStateNodeModel
+from app.models.internal import BrainStateNodeModel, UpdateChainRequest
 
 # ------------------------
 # MongoDB Setup
@@ -48,3 +50,51 @@ def update_chain_document(nodes: list[BrainStateNodeModel], meta: UpdateChainReq
         {"$set": update_data},
         upsert=True
     )
+
+
+def list_chain_summaries() -> List[dict]:
+    """
+    Return a summary of all chains (_id + user info + nodes count)
+    """
+    doc = get_chain_document()
+    summary = {
+        "_id": doc["_id"],
+        "first_name": doc.get("first_name"),
+        "last_name": doc.get("last_name"),
+        "gender": doc.get("gender"),
+        "nodes_count": len(doc.get("nodes", [])),
+    }
+    return [summary]
+
+
+def get_chain_by_id(chain_id: str) -> dict:
+    """Return the full chain document by _id"""
+    doc = get_chain_document()
+    if doc["_id"] != chain_id:
+        return None
+    return doc
+
+
+def add_node_to_chain(chain_id: str, node: BrainStateNodeModel,
+                      first_name: Optional[str] = None,
+                      last_name: Optional[str] = None,
+                      gender: Optional[Literal["male", "female", "other", "prefer_not_to_say"]] = None
+                      ) -> BrainStateNodeModel:
+    """Add a new node to the chain and update user info if provided"""
+    doc = get_chain_document()
+    if doc["_id"] != chain_id:
+        raise ValueError("Chain not found")
+
+    nodes = doc.get("nodes", [])
+    nodes.append(node.model_dump())
+
+    nodes = [BrainStateNodeModel(**n) for n in nodes]
+
+    update_data = UpdateChainRequest(
+        first_name=first_name,
+        last_name=last_name,
+        gender=gender
+    )
+
+    update_chain_document(nodes, update_data)
+    return node

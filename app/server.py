@@ -16,7 +16,7 @@ import io
 import sys
 import uuid
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, List
 
 import numpy as np
 import pandas as pd
@@ -24,6 +24,10 @@ from fastapi import FastAPI, File, UploadFile, HTTPException, Query, BackgroundT
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from starlette.responses import RedirectResponse
+
+from app.blockchain import BrainStateNode, BrainStateNodeModel
+from app.db import update_chain_document, get_chain_by_id, add_node_to_chain, list_chain_summaries
+from app.models.api import AddNodeRequest
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -278,7 +282,6 @@ async def root():
 UPLOAD_DIR = Path(__file__).parent.parent / "uploaded_videos"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
-
 @app.post("/upload", tags=["Video Upload"])
 async def upload_video(
     background_tasks: BackgroundTasks,
@@ -295,6 +298,8 @@ async def upload_video(
 
     Returns a job_id to track processing status.
     """
+
+    # TODO: check whether video was uploaded by human (do the check with human vs some animals analysis in here)
 
     # Validate file type
     valid_extensions = ('.mp4', '.mov', '.avi', '.mkv', '.webm')
@@ -330,6 +335,52 @@ async def upload_video(
 # =============================================================================
 # Main
 # =============================================================================
+
+# ------------------------
+# Request Models
+# ------------------------
+
+
+
+# ------------------------
+# Endpoints
+# ------------------------
+
+@app.get("/chains", response_model=List[dict])
+def list_chains():
+    return list_chain_summaries()
+
+
+@app.get("/chain/{chain_id}", response_model=dict)
+def get_chain(chain_id: str):
+    chain = get_chain_by_id(chain_id)
+    if not chain:
+        raise HTTPException(status_code=404, detail="Chain not found")
+    return chain
+
+
+@app.post("/chain/{chain_id}/add_node", response_model=dict)
+def add_node(chain_id: str, request: AddNodeRequest):
+    doc = get_chain_by_id(chain_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Chain not found")
+
+    # Last node hash
+    nodes = doc.get("nodes", [])
+    previous_hash = nodes[-1]["hash"] if nodes else ""
+
+    # Create new blockchain node
+    node = BrainStateNode(request.state_data, previous_hash)
+    node_model = BrainStateNodeModel(**node.to_dict())
+
+    # Add node via DB helper
+    added_node = add_node_to_chain(
+        chain_id, node_model, first_name=doc["first_name"],
+        last_name=doc["last_name"], gender=doc["gender"]
+    )
+
+    return {"message": "Node added successfully", "hash": added_node.hash}
+
 
 if __name__ == "__main__":
     import uvicorn
