@@ -34,8 +34,8 @@ st.set_page_config(
     layout="wide"
 )
 
-# Threshold
-HUMAN_THRESHOLD = 70
+# Threshold (matches hls_score.py)
+HUMAN_THRESHOLD = 50
 
 # Sampling rates for different data sources
 SAMPLING_RATES = {
