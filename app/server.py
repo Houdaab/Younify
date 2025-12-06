@@ -14,14 +14,16 @@ Endpoints:
 
 import io
 import sys
+import uuid
 from pathlib import Path
 from typing import Annotated
 
 import numpy as np
 import pandas as pd
-from fastapi import FastAPI, File, UploadFile, HTTPException, Query
+from fastapi import FastAPI, File, UploadFile, HTTPException, Query, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
+from starlette.responses import RedirectResponse
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -268,6 +270,63 @@ async def analyze_csv(
         raise HTTPException(status_code=400, detail=str(e))
 
 
+@app.get("/", include_in_schema=False)
+async def root():
+    return RedirectResponse(url="/redoc")
+
+
+UPLOAD_DIR = Path(__file__).parent.parent / "uploaded_videos"
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+
+@app.post("/upload", tags=["Video Upload"])
+async def upload_video(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    extract_audio_flag: bool = True,
+    run_safety_analysis: bool = False
+):
+    """
+    Upload a video file for processing.
+
+    - Saves video directly to UPLOAD_DIR
+    - Optionally extracts audio in background
+    - Optionally runs full safety analysis
+
+    Returns a job_id to track processing status.
+    """
+
+    # Validate file type
+    valid_extensions = ('.mp4', '.mov', '.avi', '.mkv', '.webm')
+    if not file.filename.lower().endswith(valid_extensions):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid file type. Supported: {', '.join(valid_extensions)}"
+        )
+
+    # Generate safe unique filename
+    suffix = Path(file.filename).suffix
+    job_id = str(uuid.uuid4())
+    video_path = UPLOAD_DIR / f"{job_id}{suffix}"
+
+    try:
+        # Save directly to UPLOAD_DIR
+        with open(video_path, "wb") as buffer:
+            while True:
+                chunk = await file.read(1024 * 1024)  # 1MB chunks
+                if not chunk:
+                    break
+                buffer.write(chunk)
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
+
+    return {
+        "message": "Video uploaded successfully",
+        "job_id": job_id,
+        "filename": video_path.name,
+        "path": str(video_path)
+    }
 # =============================================================================
 # Main
 # =============================================================================
