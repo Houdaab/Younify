@@ -1,48 +1,50 @@
-const BASE_URL = "http://localhost:8000";
+const BASE = "http://localhost:8000";
 
 export async function listChains() {
-  const res = await fetch(`${BASE_URL}/chains`);
+  const res = await fetch(`${BASE}/chains`);
   return res.json();
 }
 
-export async function createChain(data) {
-  const res = await fetch(`${BASE_URL}/chains/new`, {
+export async function getChain(chainId) {
+  const res = await fetch(`${BASE}/chain/${chainId}`);
+  return res.json();
+}
+
+export async function createChain(userData) {
+  const res = await fetch(`${BASE}/chains/new`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(data),
+    body: JSON.stringify(userData),
   });
   return res.json();
 }
 
-export async function addNode(chain_id, file) {
-  const formData = new FormData();
-  formData.append("state_data", file);
-
-  const res = await fetch(`${BASE_URL}/chain/${chain_id}/add_node`, {
+export async function addNode(chainId, file) {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch(`${BASE}/chain/${chainId}/add_node`, {
     method: "POST",
-    body: formData,
+    body: form,
   });
   return res.json();
 }
 
 export async function listVideos() {
-  const res = await fetch(`${BASE_URL}/videos`);
+  const res = await fetch(`${BASE}/videos`);
   return res.json();
 }
 
-export async function uploadVideo(user_id, file) {
-  const formData = new FormData();
-  formData.append("file", file);
-  formData.append("user_id", user_id);
-
-  const res = await fetch(`${BASE_URL}/upload?user_id=${user_id}`, {
-    method: "POST",
-    body: formData,
-  });
+export async function uploadVideo(userId, file) {
+  const form = new FormData();
+  form.append("file", file);
+  form.append("user_id", userId);
+  const res = await fetch(`${BASE}/upload`, { method: "POST", body: form });
   return res.json();
 }
 
-export async function getChain(chain_id) {
-  const res = await fetch(`${BASE_URL}/chain/${chain_id}`);
+export async function uploadEEG(userId, file) {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch(`${BASE}/supply_data/${userId}`, { method: "POST", body: form });
   return res.json();
 }

@@ -1,17 +1,16 @@
+import React from "react";
 import { FormControl, InputLabel, Select, MenuItem } from "@mui/material";
 
-export default function UserSelect({ value, onChange, users }) {
+export default function UserSelect({ users, value, onChange }) {
   return (
-    <FormControl sx={{ minWidth: 200 }}>
-      <InputLabel id="user-select-label">Select User</InputLabel>
-      <Select
-        labelId="user-select-label"
-        value={value || ""}
-        label="Select User"
-        onChange={(e) => onChange(e.target.value)}
-      >
-        {users.map((u) => (
-          <MenuItem key={u.id} value={u.id}>
+    <FormControl fullWidth>
+      <InputLabel>User</InputLabel>
+      <Select value={value?._id || ""} label="User" onChange={e => {
+        const selected = users.find(u => u._id === e.target.value);
+        onChange(selected);
+      }}>
+        {users.map(u => (
+          <MenuItem key={u._id} value={u._id}>
             {u.first_name} {u.last_name}
           </MenuItem>
         ))}

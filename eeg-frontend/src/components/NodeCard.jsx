@@ -1,49 +1,16 @@
+import React from "react";
+import { Card, CardContent, Typography } from "@mui/material";
 
-import { Card, CardContent, Typography, Box } from "@mui/material";
-
-export default function NodeCard({ node }) {
+export default function NodeCard({ node, index }) {
   return (
-    <Card
-      sx={{
-        width: 200,
-        margin: 2,
-        borderRadius: 3,
-        boxShadow: 6,
-        background: "#e1f5fe",
-        transition: "transform 0.3s",
-        "&:hover": { transform: "scale(1.05)" }
-      }}
-    >
+    <Card sx={{ padding: 1 }}>
       <CardContent>
-        <Typography variant="body2" color="text.secondary">
-          Previous Hash:
+        <Typography variant="subtitle1">Node {index + 1}</Typography>
+        <Typography variant="body2">Hash: {node.hash}</Typography>
+        <Typography variant="body2">Prev: {node.previous_hash}</Typography>
+        <Typography variant="body2">
+          Data: {JSON.stringify(node.state_data).slice(0, 50)}...
         </Typography>
-        <Box
-          sx={{
-            wordBreak: "break-all",
-            fontSize: "0.75rem",
-            background: "#b3e5fc",
-            padding: "4px 6px",
-            borderRadius: 1,
-            marginBottom: 1
-          }}
-        >
-          {node.previous_hash}
-        </Box>
-        <Typography variant="body2" color="text.secondary">
-          Current Hash:
-        </Typography>
-        <Box
-          sx={{
-            wordBreak: "break-all",
-            fontSize: "0.75rem",
-            background: "#81d4fa",
-            padding: "4px 6px",
-            borderRadius: 1
-          }}
-        >
-          {node.hash}
-        </Box>
       </CardContent>
     </Card>
   );
