@@ -16,6 +16,14 @@ client = pymongo.MongoClient(MONGO_URI)
 db = client[DB_NAME]
 collection = db[COLLECTION_NAME]
 
+videos_col = db["videos"]     # stores uploaded videos
+
+# -----------------------------
+
+# Videos collection: index on user_id for fast lookup and on uploaded_at for sorting
+videos_col.create_index([("user_id", pymongo.ASCENDING)])
+videos_col.create_index([("uploaded_at", pymongo.ASCENDING)])
+
 
 def create_new_chain(first_name: Optional[str] = None,
                      last_name: Optional[str] = None,

@@ -291,68 +291,77 @@ EEG_DIR.mkdir(parents=True, exist_ok=True)
 
 @app.post("/upload", tags=["Video Upload"])
 async def upload_video(
-    background_tasks: BackgroundTasks,
+    user_id: str = Query(..., description="ID of the user uploading the video"),
     file: UploadFile = File(...),
     extract_audio_flag: bool = True,
     run_safety_analysis: bool = False
 ):
     """
-    Upload a video file for processing.
-
-    - Saves video directly to UPLOAD_DIR
-    - Optionally extracts audio in background
-    - Optionally runs full safety analysis
-
-    Returns a job_id to track processing status.
+    Upload a video linked to a specific user.
     """
-
-    # TODO: check whether video was uploaded by human (do the check with human vs some animals analysis in here)
-
     # Validate file type
     valid_extensions = ('.mp4', '.mov', '.avi', '.mkv', '.webm')
     if not file.filename.lower().endswith(valid_extensions):
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid file type. Supported: {', '.join(valid_extensions)}"
-        )
+        raise HTTPException(status_code=400, detail=f"Invalid file type. Supported: {', '.join(valid_extensions)}")
 
     # Generate safe unique filename
     suffix = Path(file.filename).suffix
-    job_id = str(uuid.uuid4())
-    video_path = UPLOAD_DIR / f"{job_id}{suffix}"
+    video_id = str(uuid.uuid4())
+    video_path = UPLOAD_DIR / f"{video_id}{suffix}"
 
     try:
-        # Save directly to UPLOAD_DIR
         with open(video_path, "wb") as buffer:
-            while True:
-                chunk = await file.read(1024 * 1024)  # 1MB chunks
-                if not chunk:
-                    break
+            while chunk := await file.read(1024 * 1024):
                 buffer.write(chunk)
-
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
 
+    # Store video metadata in DB (assume MongoDB)
+    from app.db import db
+    db.videos.insert_one({
+        "_id": video_id,
+        "filename": video_path.name,
+        "user_id": user_id,
+        "is_human": False,  # default, will be updated after EEG check
+        "uploaded_at": pd.Timestamp.now()
+    })
+
     return {
         "message": "Video uploaded successfully",
-        "job_id": job_id,
+        "video_id": video_id,
         "filename": video_path.name,
-        "path": str(video_path)
+        "url": f"/uploaded_videos/{video_path.name}",
+        "user_id": user_id
     }
+
 
 app.mount("/uploaded_videos", StaticFiles(directory=str(UPLOAD_DIR)), name="uploaded_videos")
 
-@app.get("/videos")
+@app.get("/videos", tags=["Video List"])
 def list_videos():
+    """
+    Return all uploaded videos with author info and human verification status.
+    """
+    from app.db import db
     videos = []
 
-    for f in UPLOAD_DIR.glob("*"):
-        if f.suffix.lower() in ('.mp4', '.mov', '.webm', '.avi', '.mkv'):
-            videos.append({
-                "filename": f.name,
-                "url": f"/uploaded_videos/{f.name}",
-                "size_mb": round(f.stat().st_size / (1024 * 1024), 2)
-            })
+    for doc in db.videos.find({}):
+        # Get user info from chain
+        chain = get_chain_by_id(doc["user_id"])
+        author = {
+            "first_name": chain.get("first_name", ""),
+            "last_name": chain.get("last_name", ""),
+            "gender": chain.get("gender", "")
+        } if chain else {}
+
+        videos.append({
+            "video_id": doc["_id"],
+            "filename": doc["filename"],
+            "url": f"/uploaded_videos/{doc['filename']}",
+            "user_id": doc["user_id"],
+            "author": author,
+            "is_human": doc.get("is_human", False)
+        })
 
     return {"videos": videos}
 
@@ -418,15 +427,15 @@ def add_node(chain_id: str, request: AddNodeRequest):
 
 @app.post("/supply_data/{user_id}", tags=["EEG Upload"])
 async def upload_eeg(
-    user_id: str,  # <-- path parameter
+    user_id: str,
     file: UploadFile = File(...),
 ):
     """
     Upload an EEG CSV file for a specific user, run human verification,
-    and create/update user's brain chain.
+    create/update user's brain chain, and update all user's videos.
     """
     if not file.filename.lower().endswith(".csv"):
-        raise HTTPException(status_code=400, detail="EEG file must be a CSV")
+        raise HTTPException(status_code=400, detail="EEG file must be CSV")
 
     eeg_id = str(uuid.uuid4())
     eeg_path = EEG_DIR / f"{eeg_id}.csv"
@@ -447,8 +456,12 @@ async def upload_eeg(
     if chain_doc:
         update_chain_is_human(chain_doc["_id"], is_human)
     else:
-        chain_doc = create_new_chain()
+        chain_doc = create_new_chain(user_id=user_id)
         update_chain_is_human(chain_doc["_id"], is_human)
+
+    # Update all videos uploaded by this user
+    from app.db import db
+    db.videos.update_many({"user_id": user_id}, {"$set": {"is_human": is_human}})
 
     return {
         "message": "EEG uploaded and verified",
