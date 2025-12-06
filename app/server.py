@@ -24,6 +24,7 @@ from fastapi import FastAPI, File, UploadFile, HTTPException, Query, BackgroundT
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from starlette.responses import RedirectResponse
+from starlette.staticfiles import StaticFiles
 
 from app.blockchain import BrainStateNode, BrainStateNodeModel
 from app.db import update_chain_document, get_chain_by_id, add_node_to_chain, list_chain_summaries, create_new_chain
@@ -281,7 +282,7 @@ async def root():
     return RedirectResponse(url="/redoc")
 
 
-UPLOAD_DIR = Path(__file__).parent.parent / "uploaded_videos"
+UPLOAD_DIR = Path(__file__).parent / "uploaded_videos"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 @app.post("/upload", tags=["Video Upload"])
@@ -334,6 +335,23 @@ async def upload_video(
         "filename": video_path.name,
         "path": str(video_path)
     }
+
+app.mount("/uploaded_videos", StaticFiles(directory=str(UPLOAD_DIR)), name="uploaded_videos")
+
+@app.get("/videos")
+def list_videos():
+    videos = []
+
+    for f in UPLOAD_DIR.glob("*"):
+        if f.suffix.lower() in ('.mp4', '.mov', '.webm', '.avi', '.mkv'):
+            videos.append({
+                "filename": f.name,
+                "url": f"/uploaded_videos/{f.name}",
+                "size_mb": round(f.stat().st_size / (1024 * 1024), 2)
+            })
+
+    return {"videos": videos}
+
 # =============================================================================
 # Main
 # =============================================================================
