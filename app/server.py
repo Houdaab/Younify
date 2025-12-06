@@ -1,0 +1,278 @@
+"""
+FastAPI server for EEG Legitimacy Analysis
+
+Accepts EEG data and returns the Human Legitimacy Score.
+
+Usage:
+    uvicorn app.server:app --reload --port 8000
+    
+Endpoints:
+    POST /analyze       - Analyze EEG data (JSON)
+    POST /analyze/csv   - Analyze EEG data (CSV file upload)
+    GET  /health        - Health check
+"""
+
+import io
+import sys
+from pathlib import Path
+from typing import Annotated
+
+import numpy as np
+import pandas as pd
+from fastapi import FastAPI, File, UploadFile, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
+
+# Add project root to path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from src.preprocess import normalize_channels
+from src.features import extract_all_features
+from src.hls_score import compute_hls
+
+
+# =============================================================================
+# Pydantic Models
+# =============================================================================
+
+class EEGData(BaseModel):
+    """Input model for EEG data."""
+    time: list[float] = Field(..., description="Time values")
+    channels: list[str] = Field(..., description="Channel names")
+    data: list[list[float]] = Field(
+        ..., 
+        description="EEG data as 2D array (samples x channels)"
+    )
+    sampling_frequency: float = Field(
+        default=256.0, 
+        description="Sampling frequency in Hz"
+    )
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "time": [0.0, 0.004, 0.008, 0.012],
+                "channels": ["Fp1", "Fp2", "F3", "F4"],
+                "data": [
+                    [1.2, 0.8, -0.5, 0.3],
+                    [1.1, 0.9, -0.4, 0.2],
+                    [1.3, 0.7, -0.6, 0.4],
+                    [1.0, 1.0, -0.3, 0.1]
+                ],
+                "sampling_frequency": 256.0
+            }
+        }
+
+
+class ComponentScores(BaseModel):
+    """Individual HLS component scores."""
+    pbd: float = Field(..., description="Physiological Baseline Deviation (0-1)")
+    ncm: float = Field(..., description="Neural Complexity Measures (0-1)")
+    mvi: float = Field(..., description="Micro-Variability Index (0-1)")
+    tam: float = Field(..., description="Temporal Autocorrelation Measures (0-1)")
+    nsc: float = Field(..., description="Neural Signal Consistency (0-1)")
+
+
+class FeatureResults(BaseModel):
+    """Extracted feature statistics."""
+    variance: dict[str, float]
+    spectral_entropy: dict[str, float]
+    fractal_dimension: dict[str, float]
+    micro_variability: dict[str, float]
+
+
+class HLSResponse(BaseModel):
+    """Response model for HLS analysis."""
+    hls: float = Field(..., description="Human Legitimacy Score (0-100)")
+    interpretation: str = Field(..., description="Score interpretation")
+    components: ComponentScores
+    features: FeatureResults
+    metadata: dict = Field(default_factory=dict)
+
+
+class HealthResponse(BaseModel):
+    """Health check response."""
+    status: str
+    version: str
+
+
+# =============================================================================
+# FastAPI App
+# =============================================================================
+
+app = FastAPI(
+    title="EEG Legitimacy API",
+    description="Analyze EEG signals and compute Human Legitimacy Scores",
+    version="0.1.0",
+)
+
+# CORS middleware for frontend access
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+# =============================================================================
+# Helper Functions
+# =============================================================================
+
+def interpret_score(hls: float) -> str:
+    """Generate human-readable interpretation of HLS."""
+    if hls >= 80:
+        return "HIGH - Signal appears to be genuine human EEG"
+    elif hls >= 60:
+        return "MODERATE - Signal shows some human characteristics"
+    elif hls >= 40:
+        return "LOW - Signal has questionable authenticity"
+    else:
+        return "VERY LOW - Signal unlikely to be genuine human EEG"
+
+
+def analyze_eeg(data: np.ndarray, channels: list[str], fs: float) -> HLSResponse:
+    """Run the full analysis pipeline."""
+    # Preprocess
+    data_norm = normalize_channels(data, method="zscore")
+    
+    # Extract features
+    features = extract_all_features(data_norm, fs=fs)
+    
+    # Compute HLS
+    scores = compute_hls(data_norm, fs=fs)
+    
+    # Build response
+    return HLSResponse(
+        hls=round(scores["hls"], 2),
+        interpretation=interpret_score(scores["hls"]),
+        components=ComponentScores(
+            pbd=round(scores["pbd"], 4),
+            ncm=round(scores["ncm"], 4),
+            mvi=round(scores["mvi"], 4),
+            tam=round(scores["tam"], 4),
+            nsc=round(scores["nsc"], 4),
+        ),
+        features=FeatureResults(
+            variance={"mean": float(np.mean(features["variance"])), 
+                      "std": float(np.std(features["variance"]))},
+            spectral_entropy={"mean": float(np.mean(features["spectral_entropy"])), 
+                              "std": float(np.std(features["spectral_entropy"]))},
+            fractal_dimension={"mean": float(np.mean(features["fractal_dimension"])), 
+                               "std": float(np.std(features["fractal_dimension"]))},
+            micro_variability={"mean": float(np.mean(features["micro_variability"])), 
+                               "std": float(np.std(features["micro_variability"]))},
+        ),
+        metadata={
+            "n_samples": data.shape[0],
+            "n_channels": data.shape[1],
+            "channels": channels,
+            "sampling_frequency": fs,
+        }
+    )
+
+
+# =============================================================================
+# Endpoints
+# =============================================================================
+
+@app.get("/health", response_model=HealthResponse, tags=["System"])
+async def health_check():
+    """Health check endpoint."""
+    return HealthResponse(status="healthy", version="0.1.0")
+
+
+@app.post("/analyze", response_model=HLSResponse, tags=["Analysis"])
+async def analyze_json(eeg_data: EEGData):
+    """
+    Analyze EEG data provided as JSON.
+    
+    Accepts EEG time series data and returns the Human Legitimacy Score
+    along with component scores and extracted features.
+    """
+    try:
+        data = np.array(eeg_data.data)
+        
+        if data.ndim != 2:
+            raise HTTPException(
+                status_code=400, 
+                detail="Data must be a 2D array (samples x channels)"
+            )
+        
+        if data.shape[1] != len(eeg_data.channels):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Number of channels ({len(eeg_data.channels)}) "
+                       f"doesn't match data dimensions ({data.shape[1]})"
+            )
+        
+        return analyze_eeg(data, eeg_data.channels, eeg_data.sampling_frequency)
+    
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/analyze/csv", response_model=HLSResponse, tags=["Analysis"])
+async def analyze_csv(
+    file: Annotated[UploadFile, File(description="CSV file with Time column and EEG channels")],
+    sampling_frequency: Annotated[float, Query(description="Sampling frequency in Hz")] = 256.0,
+):
+    """
+    Analyze EEG data from a CSV file upload.
+    
+    The CSV should have a 'Time' column and one or more EEG channel columns.
+    """
+    if not file.filename.endswith(".csv"):
+        raise HTTPException(
+            status_code=400, 
+            detail="File must be a CSV"
+        )
+    
+    try:
+        # Read CSV
+        contents = await file.read()
+        df = pd.read_csv(io.StringIO(contents.decode("utf-8")))
+        
+        # Find time column
+        time_col = None
+        for col in df.columns:
+            if col.lower() == "time":
+                time_col = col
+                break
+        
+        if time_col is None:
+            raise HTTPException(
+                status_code=400, 
+                detail="CSV must contain a 'Time' column"
+            )
+        
+        # Extract channels
+        channels = [col for col in df.columns if col != time_col]
+        
+        if not channels:
+            raise HTTPException(
+                status_code=400, 
+                detail="CSV must contain at least one EEG channel column"
+            )
+        
+        data = df[channels].to_numpy()
+        
+        return analyze_eeg(data, channels, sampling_frequency)
+    
+    except pd.errors.EmptyDataError:
+        raise HTTPException(status_code=400, detail="CSV file is empty")
+    except pd.errors.ParserError as e:
+        raise HTTPException(status_code=400, detail=f"CSV parsing error: {e}")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+# =============================================================================
+# Main
+# =============================================================================
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
+
