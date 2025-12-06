@@ -29,7 +29,8 @@ def create_new_chain(first_name: Optional[str] = None,
         "nodes": [],
         "first_name": first_name,
         "last_name": last_name,
-        "gender": gender
+        "gender": gender,
+        "is_human": False,
     }
 
     collection.insert_one(doc)
@@ -40,8 +41,25 @@ def create_new_chain(first_name: Optional[str] = None,
         "first_name": first_name,
         "last_name": last_name,
         "gender": gender,
+        "is_human": False,
         "nodes_count": 0
     }
+
+
+def update_chain_is_human(chain_id: str, is_human: bool) -> None:
+    """
+    Update only the is_human field (and optional score) for a specific chain.
+    """
+
+    update_data = {"is_human": is_human}
+
+    result = collection.update_one(
+        {"_id": chain_id},
+        {"$set": update_data}
+    )
+
+    if result.matched_count == 0:
+        raise ValueError(f"Chain with id '{chain_id}' not found")
 
 
 def update_chain_document(

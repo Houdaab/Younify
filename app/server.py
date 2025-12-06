@@ -27,6 +27,7 @@ from starlette.responses import RedirectResponse
 
 from app.blockchain import BrainStateNode, BrainStateNodeModel
 from app.db import update_chain_document, get_chain_by_id, add_node_to_chain, list_chain_summaries, create_new_chain
+from app.human_check import check_human
 from app.models.api import AddNodeRequest
 from app.models.internal import ExtraUserData
 

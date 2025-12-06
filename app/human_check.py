@@ -28,7 +28,7 @@ from src.hls_score import compute_hls
 # Default threshold for human classification
 HUMAN_THRESHOLD = 70
 
-
+# TODO: in the dataset, we have different fs's for recording patient's signal
 def check_human(filepath: Path, fs: float = 256.0) -> dict:
     """
     Check if an EEG file is from a human brain.
