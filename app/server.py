@@ -14,14 +14,21 @@ Endpoints:
 
 import io
 import sys
+import uuid
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, List, Optional, Literal
 
 import numpy as np
 import pandas as pd
-from fastapi import FastAPI, File, UploadFile, HTTPException, Query
+from fastapi import FastAPI, File, UploadFile, HTTPException, Query, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
+from starlette.responses import RedirectResponse
+
+from app.blockchain import BrainStateNode, BrainStateNodeModel
+from app.db import update_chain_document, get_chain_by_id, add_node_to_chain, list_chain_summaries, create_new_chain
+from app.models.api import AddNodeRequest
+from app.models.internal import ExtraUserData
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -268,11 +275,125 @@ async def analyze_csv(
         raise HTTPException(status_code=400, detail=str(e))
 
 
+@app.get("/", include_in_schema=False)
+async def root():
+    return RedirectResponse(url="/redoc")
+
+
+UPLOAD_DIR = Path(__file__).parent.parent / "uploaded_videos"
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+@app.post("/upload", tags=["Video Upload"])
+async def upload_video(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    extract_audio_flag: bool = True,
+    run_safety_analysis: bool = False
+):
+    """
+    Upload a video file for processing.
+
+    - Saves video directly to UPLOAD_DIR
+    - Optionally extracts audio in background
+    - Optionally runs full safety analysis
+
+    Returns a job_id to track processing status.
+    """
+
+    # TODO: check whether video was uploaded by human (do the check with human vs some animals analysis in here)
+
+    # Validate file type
+    valid_extensions = ('.mp4', '.mov', '.avi', '.mkv', '.webm')
+    if not file.filename.lower().endswith(valid_extensions):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid file type. Supported: {', '.join(valid_extensions)}"
+        )
+
+    # Generate safe unique filename
+    suffix = Path(file.filename).suffix
+    job_id = str(uuid.uuid4())
+    video_path = UPLOAD_DIR / f"{job_id}{suffix}"
+
+    try:
+        # Save directly to UPLOAD_DIR
+        with open(video_path, "wb") as buffer:
+            while True:
+                chunk = await file.read(1024 * 1024)  # 1MB chunks
+                if not chunk:
+                    break
+                buffer.write(chunk)
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
+
+    return {
+        "message": "Video uploaded successfully",
+        "job_id": job_id,
+        "filename": video_path.name,
+        "path": str(video_path)
+    }
 # =============================================================================
 # Main
 # =============================================================================
 
+# ------------------------
+# Request Models
+# ------------------------
+
+
+
+# ------------------------
+# Endpoints
+# ------------------------
+
+@app.post("/chains/new", response_model=dict)
+def create_chain(user_data: ExtraUserData):
+    """
+    Create a new chain document.
+    Returns summary (_id, user info, nodes_count=0)
+    """
+    return create_new_chain(
+        first_name=user_data.first_name,
+        last_name=user_data.last_name,
+        gender=user_data.gender
+    )
+
+@app.get("/chains", response_model=List[dict])
+def list_chains():
+    return list_chain_summaries()
+
+@app.get("/chain/{chain_id}", response_model=dict)
+def get_chain(chain_id: str):
+    chain = get_chain_by_id(chain_id)
+    if not chain:
+        raise HTTPException(status_code=404, detail="Chain not found")
+    return chain
+
+
+@app.post("/chain/{chain_id}/add_node", response_model=dict)
+def add_node(chain_id: str, request: AddNodeRequest):
+    doc = get_chain_by_id(chain_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Chain not found")
+
+    # Last node hash
+    nodes = doc.get("nodes", [])
+    previous_hash = nodes[-1]["hash"] if nodes else ""
+
+    # Create new blockchain node
+    node = BrainStateNode(request.state_data, previous_hash)
+    node_model = BrainStateNodeModel(**node.to_dict())
+
+    # Add node via DB helper
+    added_node = add_node_to_chain(
+        chain_id, node_model, first_name=doc["first_name"],
+        last_name=doc["last_name"], gender=doc["gender"]
+    )
+
+    return {"message": "Node added successfully", "hash": added_node.hash}
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
-
