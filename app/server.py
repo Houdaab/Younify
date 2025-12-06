@@ -16,7 +16,7 @@ import io
 import sys
 import uuid
 from pathlib import Path
-from typing import Annotated, List
+from typing import Annotated, List, Optional, Literal
 
 import numpy as np
 import pandas as pd
@@ -26,8 +26,9 @@ from pydantic import BaseModel, Field
 from starlette.responses import RedirectResponse
 
 from app.blockchain import BrainStateNode, BrainStateNodeModel
-from app.db import update_chain_document, get_chain_by_id, add_node_to_chain, list_chain_summaries
+from app.db import update_chain_document, get_chain_by_id, add_node_to_chain, list_chain_summaries, create_new_chain
 from app.models.api import AddNodeRequest
+from app.models.internal import ExtraUserData
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -346,10 +347,21 @@ async def upload_video(
 # Endpoints
 # ------------------------
 
+@app.post("/chains/new", response_model=dict)
+def create_chain(user_data: ExtraUserData):
+    """
+    Create a new chain document.
+    Returns summary (_id, user info, nodes_count=0)
+    """
+    return create_new_chain(
+        first_name=user_data.first_name,
+        last_name=user_data.last_name,
+        gender=user_data.gender
+    )
+
 @app.get("/chains", response_model=List[dict])
 def list_chains():
     return list_chain_summaries()
-
 
 @app.get("/chain/{chain_id}", response_model=dict)
 def get_chain(chain_id: str):
@@ -385,4 +397,3 @@ def add_node(chain_id: str, request: AddNodeRequest):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
-

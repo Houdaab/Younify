@@ -1,8 +1,9 @@
+import uuid
 from typing import Optional, Literal, List
 
 import pymongo
 
-from app.models.internal import BrainStateNodeModel, UpdateChainRequest
+from app.models.internal import BrainStateNodeModel, ExtraUserData
 
 # ------------------------
 # MongoDB Setup
@@ -15,22 +16,40 @@ client = pymongo.MongoClient(MONGO_URI)
 db = client[DB_NAME]
 collection = db[COLLECTION_NAME]
 
-# ------------------------
-# DB Methods for single chain document
-# ------------------------
-CHAIN_DOC_ID = "brain_chain_main"  # fixed _id for single document
 
-def get_chain_document() -> dict:
-    """Get the single chain document, create if not exists"""
-    doc = collection.find_one({"_id": CHAIN_DOC_ID})
-    if not doc:
-        doc = {"_id": CHAIN_DOC_ID, "nodes": []}
-        collection.insert_one(doc)
-    return doc
+def create_new_chain(first_name: Optional[str] = None,
+                     last_name: Optional[str] = None,
+                     gender: Optional[Literal["male", "female", "other", "prefer_not_to_say"]] = None) -> dict:
+    """Create a new empty chain document and return summary"""
+
+    new_id = str(uuid.uuid4())
+
+    doc = {
+        "_id": new_id,
+        "nodes": [],
+        "first_name": first_name,
+        "last_name": last_name,
+        "gender": gender
+    }
+
+    collection.insert_one(doc)
+
+    # Return summary without nodes
+    return {
+        "_id": new_id,
+        "first_name": first_name,
+        "last_name": last_name,
+        "gender": gender,
+        "nodes_count": 0
+    }
 
 
-def update_chain_document(nodes: list[BrainStateNodeModel], meta: UpdateChainRequest) -> None:
-    """Update the single chain document with nodes and optional user info"""
+def update_chain_document(
+    chain_id: str,
+    nodes: list[BrainStateNodeModel],
+    meta: ExtraUserData
+) -> None:
+    """Update the specified chain document with nodes and optional user info"""
 
     update_data = {
         "nodes": [n.model_dump() for n in nodes]
@@ -46,7 +65,7 @@ def update_chain_document(nodes: list[BrainStateNodeModel], meta: UpdateChainReq
         update_data["gender"] = meta.gender
 
     collection.update_one(
-        {"_id": CHAIN_DOC_ID},
+        {"_id": chain_id},
         {"$set": update_data},
         upsert=True
     )
@@ -54,25 +73,25 @@ def update_chain_document(nodes: list[BrainStateNodeModel], meta: UpdateChainReq
 
 def list_chain_summaries() -> List[dict]:
     """
-    Return a summary of all chains (_id + user info + nodes count)
+    Return a summary of all chain documents (_id + user info + nodes_count)
     """
-    doc = get_chain_document()
-    summary = {
-        "_id": doc["_id"],
-        "first_name": doc.get("first_name"),
-        "last_name": doc.get("last_name"),
-        "gender": doc.get("gender"),
-        "nodes_count": len(doc.get("nodes", [])),
-    }
-    return [summary]
+    docs = collection.find({}, {"nodes": 1, "first_name": 1, "last_name": 1, "gender": 1})
+    summaries = []
+    for doc in docs:
+        summaries.append({
+            "_id": doc["_id"],
+            "first_name": doc.get("first_name"),
+            "last_name": doc.get("last_name"),
+            "gender": doc.get("gender"),
+            "nodes_count": len(doc.get("nodes", []))
+        })
+    return summaries
 
 
-def get_chain_by_id(chain_id: str) -> dict:
+def get_chain_by_id(chain_id: str) -> Optional[dict]:
     """Return the full chain document by _id"""
-    doc = get_chain_document()
-    if doc["_id"] != chain_id:
-        return None
-    return doc
+    doc = collection.find_one({"_id": chain_id})
+    return doc  # Returns None if not found
 
 
 def add_node_to_chain(chain_id: str, node: BrainStateNodeModel,
@@ -81,7 +100,7 @@ def add_node_to_chain(chain_id: str, node: BrainStateNodeModel,
                       gender: Optional[Literal["male", "female", "other", "prefer_not_to_say"]] = None
                       ) -> BrainStateNodeModel:
     """Add a new node to the chain and update user info if provided"""
-    doc = get_chain_document()
+    doc = get_chain_by_id(chain_id)
     if doc["_id"] != chain_id:
         raise ValueError("Chain not found")
 
@@ -90,11 +109,11 @@ def add_node_to_chain(chain_id: str, node: BrainStateNodeModel,
 
     nodes = [BrainStateNodeModel(**n) for n in nodes]
 
-    update_data = UpdateChainRequest(
+    update_data = ExtraUserData(
         first_name=first_name,
         last_name=last_name,
         gender=gender
     )
 
-    update_chain_document(nodes, update_data)
+    update_chain_document(chain_id, nodes, update_data)
     return node

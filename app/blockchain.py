@@ -4,7 +4,7 @@ from typing import Optional, List, Literal
 
 from pydantic import BaseModel, Field, ValidationError
 
-from db import get_chain_document, update_chain_document
+from app.db import get_chain_by_id
 
 
 # ------------------------
@@ -58,11 +58,10 @@ class BrainStateNode:
 # Blockchain Functions
 # ------------------------
 
-def add_brain_state(chain_update: UpdateChainRequest) -> dict:
+def add_brain_state(chain_update: UpdateChainRequest, doc_id: str) -> dict:
     """Add a new brain state to the single-chain document"""
 
-    # Load existing chain from Mongo
-    chain_doc = get_chain_document()
+    chain_doc = get_chain_by_id(doc_id)
     nodes = chain_doc.get("nodes", [])
 
     # Last node hash or genesis
