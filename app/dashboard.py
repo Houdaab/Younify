@@ -44,10 +44,34 @@ SAMPLING_RATES = {
 }
 
 
-def load_and_score(filepath: Path, fs: float = 256.0) -> dict | None:
+def detect_sampling_rate(filepath: Path) -> float:
+    """Detect sampling rate based on file location."""
+    path_str = str(filepath)
+    
+    # PRIMARY_synthetic is HBN format (500 Hz)
+    if "PRIMARY_synthetic" in path_str:
+        return 500.0
+    
+    # ADDITIONAL_samples are typically 256 Hz
+    if "ADDITIONAL_samples" in path_str or "real" in path_str:
+        # Check filename for hints
+        if "openneuro" in filepath.name.lower():
+            return 500.0
+        return 256.0
+    
+    # Default fallback
+    return 256.0
+
+
+def load_and_score(filepath: Path, fs: float = None) -> dict | None:
     """Load file and compute HLS."""
     try:
         time, data, channels = load_eeg_csv(filepath)
+        
+        # Auto-detect sampling rate if not provided
+        if fs is None:
+            fs = detect_sampling_rate(filepath)
+        
         data_norm = normalize_channels(data, method="zscore")
         scores = compute_hls(data_norm, fs=fs)
         return {
@@ -169,20 +193,32 @@ def main():
     
     st.divider()
     
-    # File paths (try new names first, fallback to old for compatibility)
-    real_dir = Path("data/ADDITIONAL_samples")
+    # File paths - use absolute paths to ensure we only access data/ directories
+    project_root = Path(__file__).parent.parent
+    real_dir = project_root / "data" / "ADDITIONAL_samples"
     if not real_dir.exists():
-        real_dir = Path("data/real")  # Fallback
+        real_dir = project_root / "data" / "real"  # Fallback
     
-    synthetic_dir = Path("data/PRIMARY_synthetic")
+    synthetic_dir = project_root / "data" / "PRIMARY_synthetic"
     if not synthetic_dir.exists():
-        synthetic_dir = Path("data/synthetic_hbn_format")  # Fallback
+        synthetic_dir = project_root / "data" / "synthetic_hbn_format"  # Fallback
         if not synthetic_dir.exists():
-            synthetic_dir = Path("data/synthetic")  # Old fallback
+            synthetic_dir = project_root / "data" / "synthetic"  # Old fallback
     
-    # Get file lists
-    real_files = sorted(real_dir.glob("*.csv")) if real_dir.exists() else []
-    synthetic_files = sorted(synthetic_dir.glob("*.csv")) if synthetic_dir.exists() else []
+    # Get file lists - only CSV files from data directories, ensure they're actual files
+    real_files = []
+    if real_dir.exists() and real_dir.is_dir():
+        real_files = sorted([
+            f for f in real_dir.glob("*.csv") 
+            if f.is_file() and f.suffix == ".csv" and not f.name.startswith(".")
+        ])
+    
+    synthetic_files = []
+    if synthetic_dir.exists() and synthetic_dir.is_dir():
+        synthetic_files = sorted([
+            f for f in synthetic_dir.glob("*.csv") 
+            if f.is_file() and f.suffix == ".csv" and not f.name.startswith(".")
+        ])
     
     if not real_files:
         st.warning(f"No real EEG files found in {real_dir}/")

@@ -29,8 +29,9 @@ from src.loader import load_eeg_csv
 from src.hls_score import compute_hls
 from src.preprocess import normalize_channels
 
-# Load data
-time, data, channels = load_eeg_csv('../data/real/sample_001.csv')
+# Load data (from additional samples or primary datasets)
+time, data, channels = load_eeg_csv('../data/ADDITIONAL_samples/sample_001.csv')
+# Or use primary synthetic: '../data/PRIMARY_synthetic/white_noise.csv'
 
 # Compute HLS
 data_norm = normalize_channels(data)
