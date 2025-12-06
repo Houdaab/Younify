@@ -35,10 +35,25 @@ export async function listVideos() {
 }
 
 export async function uploadVideo(userId, file) {
-  const form = new FormData();
-  form.append("file", file);
-  form.append("user_id", userId);
-  const res = await fetch(`${BASE}/upload`, { method: "POST", body: form });
+  if (!userId || !file) throw new Error("User ID and file are required");
+
+  const formData = new FormData();
+  formData.append("file", file);
+
+  // user_id must go as query param
+  const url = new URL("http://localhost:8000/upload");
+  url.searchParams.append("user_id", userId);
+
+  const res = await fetch(url.toString(), {
+    method: "POST",
+    body: formData,
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Upload failed: ${text}`);
+  }
+
   return res.json();
 }
 
