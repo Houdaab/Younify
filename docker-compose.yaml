@@ -1,0 +1,17 @@
+version: "3.9"
+
+services:
+  mongo:
+    image: mongo:7.0       # Latest stable MongoDB image
+    container_name: mongo_younify
+    restart: unless-stopped
+    ports:
+      - "27017:27017"     # Expose to host
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: secret
+    volumes:
+      - mongo_data:/data/db  # Persist data
+
+volumes:
+  mongo_data:
