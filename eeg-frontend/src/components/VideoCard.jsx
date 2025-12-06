@@ -2,7 +2,7 @@ import { Card, CardContent, Typography, CardMedia, Chip } from "@mui/material";
 
 export default function VideoCard({ video }) {
   const { url, author, is_human, filename } = video;
-  const backendUrl = "http://localhost:8000"; // hardcoded backend
+  const backendUrl = "http://localhost:8000";
 
   return (
     <Card
@@ -17,7 +17,7 @@ export default function VideoCard({ video }) {
     >
       <CardMedia
         component="video"
-        src={`${backendUrl}${url}`}
+        src={`${backendUrl}${url}`}   // <-- fetch from FastAPI server
         controls
         sx={{ height: 180, borderRadius: "8px 8px 0 0" }}
       />

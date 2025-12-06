@@ -1,81 +1,179 @@
-import { useState } from "react";
-import { Container, Grid, Typography, Paper, Box, Button, BottomNavigation, BottomNavigationAction } from "@mui/material";
-import { VideoLibrary, UploadFile, Home } from "@mui/icons-material";
-import VideoCard from "../components/VideoCard";
+import { useEffect, useState } from "react";
+import {
+  Container,
+  Grid,
+  Box,
+  Typography,
+  Card,
+  CardContent,
+  CardMedia,
+  Button,
+  BottomNavigation,
+  BottomNavigationAction,
+  Paper,
+} from "@mui/material";
+import { VideoLibrary, UploadFile, AccountTree, Home } from "@mui/icons-material";
+
 import UserSelect from "../components/UserSelect";
-import { videos as hardcodedVideos } from "../data/videos";
+import NodeCard from "../components/NodeCard";
+import VideoCard from "../components/VideoCard";
 
 export default function MainPage() {
-  const [selectedUser, setSelectedUser] = useState(null);
-  const [file, setFile] = useState(null);
-  const [videos, setVideos] = useState(hardcodedVideos);
-  const [tab, setTab] = useState("videos");
+  const [users, setUsers] = useState([]);
+  const [selectedUser, setSelectedUser] = useState("");
+  const [videos, setVideos] = useState([]);
+  const [nodes, setNodes] = useState([]);
+  const [videoFile, setVideoFile] = useState(null);
+  const [navValue, setNavValue] = useState("home");
 
-  const handleUpload = (e) => {
-    e.preventDefault();
-    alert(`Uploading brain session for user: ${selectedUser}`);
-    setFile(null);
+  // Fetch users
+  useEffect(() => {
+    fetch("http://localhost:8000/chains")
+      .then((res) => res.json())
+      .then((data) => setUsers(data))
+      .catch(console.error);
+  }, []);
+
+  // Fetch videos
+  useEffect(() => {
+    fetch("http://localhost:8000/videos")
+      .then((res) => res.json())
+      .then((data) => setVideos(data.videos))
+      .catch(console.error);
+  }, []);
+
+  // Fetch blockchain nodes when user changes
+  useEffect(() => {
+    if (!selectedUser) return;
+    fetch(`http://localhost:8000/chain/${selectedUser}`)
+      .then((res) => res.json())
+      .then((data) => setNodes(data.nodes || []))
+      .catch(console.error);
+  }, [selectedUser]);
+
+  // Upload video
+  const handleVideoUpload = async () => {
+    if (!videoFile || !selectedUser) return;
+
+    const formData = new FormData();
+    formData.append("file", videoFile);
+    formData.append("user_id", selectedUser);
+
+    const res = await fetch("http://localhost:8000/upload", {
+      method: "POST",
+      body: formData,
+    });
+
+    const data = await res.json();
+    console.log(data);
+
+    // Refresh videos
+    fetch("http://localhost:8000/videos")
+      .then((res) => res.json())
+      .then((data) => setVideos(data.videos))
+      .catch(console.error);
+
+    setVideoFile(null);
   };
 
   return (
-    <div style={{ minHeight: "100vh", background: "#fefefe", paddingBottom: "80px" }}>
-      <Container maxWidth="lg" sx={{ paddingTop: 4 }}>
-        <Typography variant="h3" align="center" sx={{ color: "#1976d2", fontWeight: "bold", marginBottom: 4 }}>
-          EEG Dashboard
+    <Container sx={{ paddingY: 4 }}>
+      <Typography variant="h4" align="center" gutterBottom>
+        EEG Blockchain & Video Dashboard
+      </Typography>
+
+      {/* User selection */}
+      <Box sx={{ marginY: 2 }}>
+        <UserSelect
+          value={selectedUser}
+          onChange={setSelectedUser}
+          users={users.map((u) => ({
+            id: u._id,
+            first_name: u.first_name,
+            last_name: u.last_name,
+          }))}
+        />
+      </Box>
+
+      {/* Blockchain nodes */}
+      {selectedUser && (
+        <Box sx={{ marginY: 4 }}>
+          <Typography variant="h5" gutterBottom>
+            Blockchain Nodes for User
+          </Typography>
+          <Grid container spacing={2}>
+            {nodes.map((node, idx) => (
+              <Grid item key={idx}>
+                <NodeCard node={node} />
+              </Grid>
+            ))}
+          </Grid>
+        </Box>
+      )}
+
+      {/* Video upload */}
+      {selectedUser && (
+        <Box sx={{ marginY: 4 }}>
+          <Typography variant="h5" gutterBottom>
+            Upload Video
+          </Typography>
+          <input
+            type="file"
+            accept="video/*"
+            onChange={(e) => setVideoFile(e.target.files[0])}
+          />
+          <Button
+            variant="contained"
+            color="primary"
+            sx={{ marginLeft: 2 }}
+            onClick={handleVideoUpload}
+          >
+            Upload
+          </Button>
+        </Box>
+      )}
+
+      {/* Videos */}
+      <Box sx={{ marginY: 4 }}>
+        <Typography variant="h5" gutterBottom>
+          Videos
         </Typography>
-
-        {tab === "upload" && (
-          <Paper sx={{ padding: 3, marginBottom: 4, boxShadow: 6, borderRadius: 3, backgroundColor: "#e3f2fd" }}>
-            <Typography variant="h5" gutterBottom sx={{ color: "#0d47a1" }}>
-              Upload Brain Session (Node)
-            </Typography>
-            <Box
-              component="form"
-              onSubmit={handleUpload}
-              sx={{ display: "flex", gap: 2, alignItems: "center", flexWrap: "wrap" }}
-            >
-              <UserSelect value={selectedUser} onChange={setSelectedUser} />
-              <input type="file" accept=".csv" onChange={(e) => setFile(e.target.files[0])} />
-              <Button variant="contained" color="primary" type="submit">
-                Upload
-              </Button>
-            </Box>
-          </Paper>
-        )}
-
-        {tab === "videos" && (
-          <>
-            <Typography variant="h5" gutterBottom sx={{ color: "#1976d2", marginBottom: 2 }}>
-              Video Gallery
-            </Typography>
-            <Grid container spacing={3}>
-              {videos.map((v) => (
-                <Grid item key={v.video_id} xs={12} sm={6} md={4} lg={3}>
-                  <VideoCard video={v} />
-                </Grid>
-              ))}
+        <Grid container spacing={2}>
+          {videos.map((v) => (
+            <Grid item key={v.video_id}>
+              <VideoCard video={v} />
             </Grid>
-          </>
-        )}
-      </Container>
+          ))}
+        </Grid>
+      </Box>
 
-      {/* Bottom Navigation */}
-      <BottomNavigation
-        sx={{
-          width: "100%",
-          position: "fixed",
-          bottom: 0,
-          backgroundColor: "#1976d2",
-          color: "#fff",
-          boxShadow: "0 -3px 10px rgba(0,0,0,0.2)"
-        }}
-        value={tab}
-        onChange={(event, newValue) => setTab(newValue)}
+      {/* Bottom navigation */}
+      <Paper
+        sx={{ position: "fixed", bottom: 0, left: 0, right: 0 }}
+        elevation={3}
       >
-        <BottomNavigationAction label="Home" value="home" icon={<Home sx={{ color: "#fff" }} />} />
-        <BottomNavigationAction label="Upload Node" value="upload" icon={<UploadFile sx={{ color: "#fff" }} />} />
-        <BottomNavigationAction label="Videos" value="videos" icon={<VideoLibrary sx={{ color: "#fff" }} />} />
-      </BottomNavigation>
-    </div>
+        <BottomNavigation
+          value={navValue}
+          onChange={(e, newValue) => setNavValue(newValue)}
+        >
+          <BottomNavigationAction label="Home" value="home" icon={<Home />} />
+          <BottomNavigationAction
+            label="Videos"
+            value="videos"
+            icon={<VideoLibrary />}
+          />
+          <BottomNavigationAction
+            label="Upload"
+            value="upload"
+            icon={<UploadFile />}
+          />
+          <BottomNavigationAction
+            label="Blockchain"
+            value="blockchain"
+            icon={<AccountTree />}
+          />
+        </BottomNavigation>
+      </Paper>
+    </Container>
   );
 }
